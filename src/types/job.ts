@@ -33,6 +33,11 @@ export interface JobCircular {
   photoSpec?: MediaSpec;
   signatureSpec?: MediaSpec;
   posts: JobPostItem[];
+  // SEO & Social Optimization
+  seoTitle?: string;
+  metaDescription?: string;
+  focusKeyword?: string;
+  tags?: string[];
   status: JobStatus;
   publishedAt?: any;
   createdAt: any;

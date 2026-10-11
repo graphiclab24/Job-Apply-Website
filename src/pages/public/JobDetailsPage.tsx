@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Users,
   CheckCircle2,
+  Tag,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../../context/AuthContext';
@@ -125,6 +126,47 @@ export const JobDetailsPage: React.FC = () => {
   const isExpired = deadlineDate ? deadlineDate.getTime() < now.getTime() : false;
   const circularLink = job.circularLink || job.circularFile;
 
+  // SEO & Social Meta Configuration
+  const pageTitle = job.seoTitle || `${job.title} | চাকরি আবেদন সার্ভিস`;
+  const metaDescription =
+    job.metaDescription ||
+    `${job.title}। সরকারি ও টেলিটক অনলাইন আবেদন সেবা। আবেদনের শেষ তারিখ: ${
+      deadlineDate ? deadlineDate.toLocaleDateString('bn-BD') : 'বিজ্ঞপ্তি দেখুন'
+    }। পদে পদের যোগ্যতা ও নিয়মাবলি জানুন।`;
+  const keywordsString =
+    job.tags && job.tags.length > 0
+      ? job.tags.join(', ')
+      : `${job.title}, সরকারি চাকরি, টেলিটক জব সার্কুলার, নিয়োগ বিজ্ঞপ্তি`;
+  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareImage = coverDataUrl || job.featuredImage || '';
+
+  // Google JobPosting JSON-LD Schema
+  const jobPostingSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: job.title,
+    description: metaDescription,
+    datePosted: job.publishedAt?.toDate
+      ? job.publishedAt.toDate().toISOString()
+      : typeof job.publishedAt === 'string'
+      ? job.publishedAt
+      : new Date().toISOString(),
+    validThrough: deadlineDate ? deadlineDate.toISOString() : undefined,
+    employmentType: 'FULL_TIME',
+    hiringOrganization: {
+      '@type': 'Organization',
+      name: job.category === 'govt' ? 'গণপ্রজাতন্ত্রী বাংলাদেশ সরকার' : 'নিয়োগকারী প্রতিষ্ঠান',
+      sameAs: job.applyLink || 'https://teletalk.com.bd',
+    },
+    jobLocation: {
+      '@type': 'Place',
+      address: {
+        '@type': 'PostalAddress',
+        addressCountry: 'BD',
+      },
+    },
+  };
+
   const handleApplyClick = () => {
     if (!user) {
       navigate('/login', { state: { from: `/apply/${job.id}` } });
@@ -136,15 +178,29 @@ export const JobDetailsPage: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       <Helmet>
-        <title>{job.title} | চাকরি আবেদন সার্ভিস</title>
-        <meta
-          name="description"
-          content={`${job.title}। সরকারি ও টেলিটক অনলাইন আবেদন সেবা। আবেদনের শেষ তারিখ: ${
-            deadlineDate ? deadlineDate.toLocaleDateString('bn-BD') : 'বিজ্ঞপ্তি দেখুন'
-          }`}
-        />
-        <meta property="og:title" content={job.title} />
-        <meta property="og:description" content="টেলিটকে অনলাইনে নির্ভুলভাবে আবেদনের সুযোগ।" />
+        <title>{pageTitle}</title>
+        <meta name="description" content={metaDescription} />
+        <meta name="keywords" content={keywordsString} />
+        <link rel="canonical" href={currentUrl} />
+
+        {/* OpenGraph / Facebook */}
+        <meta property="og:type" content="article" />
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={metaDescription} />
+        <meta property="og:url" content={currentUrl} />
+        {shareImage && <meta property="og:image" content={shareImage} />}
+        <meta property="og:site_name" content="BD Job Portal" />
+
+        {/* Twitter Cards */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={pageTitle} />
+        <meta name="twitter:description" content={metaDescription} />
+        {shareImage && <meta name="twitter:image" content={shareImage} />}
+
+        {/* Google Jobs Structured Data (Schema.org) */}
+        <script type="application/ld+json">
+          {JSON.stringify(jobPostingSchema)}
+        </script>
       </Helmet>
 
       <Link
@@ -259,10 +315,29 @@ export const JobDetailsPage: React.FC = () => {
             বিজ্ঞপ্তির বিস্তারিত বিবরণ:
           </h3>
           <div
-            className="prose prose-sm max-w-none text-gray-800 leading-relaxed space-y-4"
+            className="job-content text-gray-800 leading-relaxed"
             dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatJobContent(job.content || '')) }}
           />
         </div>
+
+        {/* SEO Tags / Keywords Chips */}
+        {job.tags && job.tags.length > 0 && (
+          <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-gray-600 flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5 text-emerald-600" />
+              <span>সম্পর্কিত কীওয়ার্ড:</span>
+            </span>
+            {job.tags.map((t, idx) => (
+              <Link
+                key={idx}
+                to={`/jobs?search=${encodeURIComponent(t)}`}
+                className="px-2.5 py-1 bg-gray-50 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 text-xs rounded-lg transition-colors font-medium border border-gray-200"
+              >
+                #{t}
+              </Link>
+            ))}
+          </div>
+        )}
 
         {/* Circular Link Field */}
         {circularLink && (

@@ -24,7 +24,9 @@ export const JobsPage: React.FC = () => {
     return getCached<JobCircular[]>('jobs_page_1') || [];
   });
   const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('jobs_page_1'));
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return new URLSearchParams(window.location.search).get('search') || '';
+  });
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -111,9 +113,13 @@ export const JobsPage: React.FC = () => {
   const now = new Date();
 
   const filteredJobs = jobs.filter((job) => {
+    const term = searchTerm.toLowerCase().trim();
     const matchesSearch =
-      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.posts?.some((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      !term ||
+      job.title.toLowerCase().includes(term) ||
+      job.posts?.some((p) => p.name.toLowerCase().includes(term)) ||
+      job.tags?.some((t) => t.toLowerCase().includes(term)) ||
+      (Boolean(job.focusKeyword) && job.focusKeyword!.toLowerCase().includes(term));
     const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });

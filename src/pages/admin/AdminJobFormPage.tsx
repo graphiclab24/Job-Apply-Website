@@ -22,7 +22,21 @@ import { DrivePickerButton } from '../../components/drive/DrivePickerButton';
 import { generateSlug } from '../../utils/slugify';
 import { useToast } from '../../components/common/Toast';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, Save, Upload, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Upload,
+  Link as LinkIcon,
+  Image as ImageIcon,
+  Search,
+  Tag,
+  Globe,
+  Sparkles,
+  CheckCircle,
+  AlertTriangle,
+  X,
+  ExternalLink,
+} from 'lucide-react';
 
 export const AdminJobFormPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -52,6 +66,13 @@ export const AdminJobFormPage: React.FC = () => {
   const [circularLink, setCircularLink] = useState('');
   const [posts, setPosts] = useState<JobPostItem[]>([{ name: '', count: 1, district: 'ALL' }]);
 
+  // SEO & Social Optimization States
+  const [seoTitle, setSeoTitle] = useState('');
+  const [metaDescription, setMetaDescription] = useState('');
+  const [focusKeyword, setFocusKeyword] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+
   useEffect(() => {
     if (!id) return;
     const fetchJob = async () => {
@@ -70,6 +91,12 @@ export const AdminJobFormPage: React.FC = () => {
           setServiceCharge(data.serviceCharge || 0);
           setCircularLink(data.circularLink || data.circularFile || '');
           setPosts(data.posts || [{ name: '', count: 1, district: 'ALL' }]);
+
+          // Load SEO fields
+          setSeoTitle(data.seoTitle || '');
+          setMetaDescription(data.metaDescription || '');
+          setFocusKeyword(data.focusKeyword || '');
+          setTags(Array.isArray(data.tags) ? data.tags : []);
 
           const hasCov = Boolean(data.hasCover || data.featuredImage);
           setHasCover(hasCov);
@@ -148,6 +175,30 @@ export const AdminJobFormPage: React.FC = () => {
     }
   };
 
+  const handleAddTag = (newTag: string) => {
+    const clean = newTag.trim().replace(/^,+|,+$/g, '');
+    if (!clean) return;
+    if (!tags.includes(clean)) {
+      setTags([...tags, clean]);
+    }
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (indexToRemove: number) => {
+    setTags(tags.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleGenerateMetaDescription = () => {
+    const totalCount = posts.reduce((acc, p) => acc + (Number(p.count) || 0), 0);
+    const countText = totalCount > 0 ? `মোট ${totalCount} টি পদে ` : '';
+    const deadlineText = deadline
+      ? `আবেদনের শেষ তারিখ: ${new Date(deadline).toLocaleDateString('bn-BD')}।`
+      : '';
+    const gen = `${title.trim()} নিয়োগ বিজ্ঞপ্তি প্রকাশ। ${countText}পদের বিবরণ, শিক্ষাগত যোগ্যতা ও শর্তাবলী জেনে টেলিটকে সহজে অনলাইনে আবেদন করুন। ${deadlineText}`.trim();
+    setMetaDescription(gen.slice(0, 160));
+    success('স্বয়ংক্রিয় মেটা ডেসক্রিপশন তৈরি করা হয়েছে!');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !slug) {
@@ -194,6 +245,11 @@ export const AdminJobFormPage: React.FC = () => {
         hasCover: Boolean(hasCover),
         circularLink: (circularLink || '').trim() || null,
         posts: finalPosts,
+        // SEO & Social Optimization
+        seoTitle: (seoTitle || '').trim() || null,
+        metaDescription: (metaDescription || '').trim() || null,
+        focusKeyword: (focusKeyword || '').trim() || null,
+        tags: tags.map((t) => t.trim()).filter(Boolean),
         photoSpec: { width: 300, height: 300, maxKB: 100 },
         signatureSpec: { width: 300, height: 80, maxKB: 60 },
         updatedAt: serverTimestamp(),
@@ -417,6 +473,270 @@ export const AdminJobFormPage: React.FC = () => {
               onChange={(e) => setCircularLink(e.target.value)}
               helperText="সার্কুলার PDF সরাসরি গুগল ড্রাইভে আপলোড করে অথবা ড্রাইভ থেকে বেছে লিংক দিতে পারেন"
             />
+          </div>
+        </div>
+      </div>
+
+      {/* SEO & Search Engine Ranking Optimization Section */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 md:p-6 space-y-6 shadow-xs">
+        <div className="border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
+              <Search className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                সার্চ ইঞ্জিন অপ্টিমাইজেশন (SEO & Google Rank Optimization)
+              </h3>
+              <p className="text-xs text-gray-500">
+                গুগল সার্চ ও সোশ্যাল মিডিয়ায় পোস্ট ১ নম্বরে র‍্যাংক করানোর জন্য মেটা ট্যাগ, কিওয়ার্ড ও ডেসক্রিপশন সেট করুন
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 1. Focus Keyword with Real-Time SEO Audit */}
+        <div className="space-y-3 bg-emerald-50/40 p-4 rounded-xl border border-emerald-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-800">
+                মূল ফোকাস কিওয়ার্ড (Focus Keyword)
+              </label>
+              <span className="text-[11px] text-gray-500">
+                যে কথাটি দিয়ে মানুষ গুগলে খুঁজবে (যেমন: &ldquo;বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি&rdquo; বা &ldquo;পল্লী বিদ্যুৎ সার্কুলার&rdquo;)
+              </span>
+            </div>
+          </div>
+
+          <Input
+            placeholder="যেমন: বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি ২০২৬"
+            value={focusKeyword}
+            onChange={(e) => setFocusKeyword(e.target.value)}
+          />
+
+          {focusKeyword && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+              <span className="font-semibold text-gray-600">SEO অডিট:</span>
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium ${
+                  title.toLowerCase().includes(focusKeyword.toLowerCase().trim())
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {title.toLowerCase().includes(focusKeyword.toLowerCase().trim()) ? (
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                )}
+                <span>টাইটেলে আছে</span>
+              </span>
+
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium ${
+                  metaDescription.toLowerCase().includes(focusKeyword.toLowerCase().trim())
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {metaDescription.toLowerCase().includes(focusKeyword.toLowerCase().trim()) ? (
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                )}
+                <span>মেটা ডেসক্রিপশনে আছে</span>
+              </span>
+
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium ${
+                  content.toLowerCase().includes(focusKeyword.toLowerCase().trim())
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {content.toLowerCase().includes(focusKeyword.toLowerCase().trim()) ? (
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                )}
+                <span>কন্টেন্টে আছে</span>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* 2. SEO Title & Meta Description */}
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-gray-800">
+                SEO পেজ টাইটেল (Title Tag)
+              </label>
+              <span className="text-[11px] text-gray-500">
+                {(seoTitle || title).length}/৬০ অক্ষর (সেরা: ৪৫-৬০)
+              </span>
+            </div>
+            <Input
+              placeholder={title || 'গুগলে প্রদর্শিত আকর্ষণীয় শিরোনাম লিখুন...'}
+              value={seoTitle}
+              onChange={(e) => setSeoTitle(e.target.value)}
+              helperText="খালি রাখলে স্বয়ংক্রিয়ভাবে মূল শিরোনাম ব্যবহৃত হবে।"
+            />
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+              <div>
+                <label className="block text-xs font-bold text-gray-800">
+                  মেটা ডেসক্রিপশন (Meta Description)
+                </label>
+                <span className="text-[11px] text-gray-500">
+                  গুগল সার্চ ফলাফলে শিরোনামের নিচে এই ১-২ লাইনের বিবরণটি প্রদর্শিত হয়
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateMetaDescription}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                  title="টাইটেল ও সার্কুলারের ডাটা দিয়ে স্বয়ংক্রিয়ভাবে মেটা ডেসক্রিপশন তৈরি করুন"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>✨ অটো তৈরি করুন</span>
+                </button>
+
+                <span
+                  className={`text-xs font-bold px-2 py-0.5 rounded ${
+                    metaDescription.length >= 120 && metaDescription.length <= 160
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : metaDescription.length > 160
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {metaDescription.length}/১৬০ অক্ষর
+                </span>
+              </div>
+            </div>
+
+            <textarea
+              rows={3}
+              value={metaDescription}
+              onChange={(e) => setMetaDescription(e.target.value)}
+              placeholder="যেমন: বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি ২০২৬ প্রকাশ। মোট ৩৪০ টি পদে আবেদনের বিস্তারিত যোগ্যতা, বয়স ও টেলিটক অনলাইন আবেদন পদ্ধতি জানুন। শেষ তারিখ: ৩০ অক্টোবর..."
+              className="w-full p-3 text-xs rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 leading-relaxed text-gray-800"
+            />
+
+            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  metaDescription.length >= 120 && metaDescription.length <= 160
+                    ? 'bg-emerald-500'
+                    : metaDescription.length > 160
+                    ? 'bg-rose-500'
+                    : 'bg-amber-400'
+                }`}
+                style={{ width: `${Math.min(100, (metaDescription.length / 160) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Tags / Keywords */}
+        <div className="space-y-2.5">
+          <label className="block text-xs font-bold text-gray-800">
+            ট্যাগ ও কীওয়ার্ডসমূহ (Tags / Keywords)
+          </label>
+          <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-gray-50 rounded-xl border border-gray-200 min-h-[44px]">
+            {tags.map((tag, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-gray-200 text-gray-800 rounded-lg text-xs font-medium shadow-xs"
+              >
+                <Tag className="w-3 h-3 text-emerald-600" />
+                <span>{tag}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(idx)}
+                  className="text-gray-400 hover:text-rose-600 transition-colors ml-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            <input
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  handleAddTag(tagInput);
+                }
+              }}
+              onBlur={() => {
+                if (tagInput.trim()) handleAddTag(tagInput);
+              }}
+              placeholder={tags.length === 0 ? 'ট্যাগ লিখে Enter বা কমা দিন...' : 'আরও ট্যাগ যোগ করুন...'}
+              className="bg-transparent text-xs focus:outline-none flex-1 min-w-[140px] px-1 py-1"
+            />
+          </div>
+
+          {/* Quick Suggestions */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[11px] text-gray-500 font-medium">জনপ্রিয় সাজেশন:</span>
+            {[
+              'সরকারি চাকরি',
+              'টেলিটক সার্কুলার',
+              'নিয়োগ বিজ্ঞপ্তি ২০২৬',
+              'রাজস্ব খাত',
+              '৯ম গ্রেড',
+              '১০ম গ্রেড',
+              'অনলাইন আবেদন',
+            ].map((sug) => (
+              <button
+                key={sug}
+                type="button"
+                onClick={() => handleAddTag(sug)}
+                disabled={tags.includes(sug)}
+                className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                  tags.includes(sug)
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200'
+                }`}
+              >
+                + {sug}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Live Google Search Preview (SERP Card) */}
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+            <Globe className="w-3.5 h-3.5 text-blue-600" />
+            <span>গুগল সার্চ ফলাফল প্রিভিউ (Google Search Preview)</span>
+          </div>
+
+          <div className="p-4 bg-white rounded-lg border border-gray-200 font-sans shadow-xs space-y-1">
+            <div className="text-[11px] text-gray-500 flex items-center gap-1">
+              <span>https://studyonlinebd.com</span>
+              <span>›</span>
+              <span>jobs</span>
+              <span>›</span>
+              <span className="text-gray-700 font-medium">{slug || 'circular-slug'}</span>
+            </div>
+
+            <h4 className="text-blue-700 hover:underline font-medium text-base leading-snug cursor-pointer">
+              {seoTitle || title || 'চাকরির নিয়োগ বিজ্ঞপ্তি | অনলাইনে আবেদন'} | চাকরি আবেদন সার্ভিস
+            </h4>
+
+            <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">
+              {metaDescription ||
+                'চাকরির নিয়োগ বিজ্ঞপ্তি প্রকাশ হয়েছে। পদের বিবরণ, শিক্ষাগত যোগ্যতা ও শর্তাবলী জেনে সহজে অনলাইনে আবেদন করুন।'}
+            </p>
           </div>
         </div>
       </div>
