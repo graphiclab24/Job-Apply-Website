@@ -354,7 +354,24 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
       <InsertImageModal
         isOpen={imageModalOpen}
         onClose={() => setImageModalOpen(false)}
-        onInsertImage={(imgHtml) => wrapSelection('', imgHtml, '')}
+        onInsertImage={(imgHtml) => {
+          const textarea = textareaRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const currentVal = value || '';
+            const padded = `\n${imgHtml.trim()}\n`;
+            const nextVal = currentVal.substring(0, start) + padded + currentVal.substring(end);
+            onChange(nextVal);
+            setTimeout(() => {
+              textarea.focus();
+              const newPos = start + padded.length;
+              textarea.setSelectionRange(newPos, newPos);
+            }, 0);
+          } else {
+            onChange((value ? `${value}\n\n` : '') + imgHtml.trim() + '\n');
+          }
+        }}
       />
     </div>
   );

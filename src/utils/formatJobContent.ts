@@ -1,6 +1,7 @@
 /**
  * Smart Job Content Formatter & Markdown-HTML Parser
  * Seamlessly handles:
+ * - Images (HTML <img>, Google Drive lh3 URLs, broken/truncated img tags auto-repaired)
  * - Markdown (# H1, ## H2, ### H3, **bold**, *italic*, - bullets, 1. numbered)
  * - Raw Bengali circular text (auto-detects headings, key-value bolding, bullet points)
  * - HTML tags (<h1>, <h2>, <h3>, <b>, <strong>, <i>, <ul>, <ol>, <table>, <a>, <img>)
@@ -11,19 +12,12 @@ export function formatJobContent(content: string): string {
 
   let text = content.trim();
 
-  // 1. Process inline markdown everywhere:
+  // 1. Process inline markdown:
   // **bold** or __bold__ -> <b>...</b>
   text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   text = text.replace(/__(.*?)__/g, '<b>$1</b>');
   // *italic* or _italic_ -> <i>...</i>
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
-
-  // If text already has full semantic HTML paragraphs/divs enclosing everything,
-  // we do a light pass to ensure links and inline styles are clean and return:
-  const isFullHtmlDocument = /^<(p|div|section|article)[\s>]/i.test(text) && /<\/(p|div|section|article)>$/i.test(text);
-  if (isFullHtmlDocument) {
-    return formatInlineLinks(text);
-  }
 
   // 2. Parse lines
   const lines = text.split(/\r?\n/);
@@ -38,15 +32,7 @@ export function formatJobContent(content: string): string {
 
     // Check for HTML table block pass-through
     if (/<table[\s>]/i.test(rawLine) || inTableBlock) {
-      if (inBulletList) {
-        result.push('</ul>');
-        inBulletList = false;
-      }
-      if (inNumberedList) {
-        result.push('</ol>');
-        inNumberedList = false;
-      }
-
+      closeLists();
       tableBuffer.push(rawLine);
       if (/<\/table>/i.test(rawLine)) {
         result.push(tableBuffer.join('\n'));
@@ -60,27 +46,50 @@ export function formatJobContent(content: string): string {
 
     // Blank line
     if (!rawLine) {
-      if (inBulletList) {
-        result.push('</ul>');
-        inBulletList = false;
-      }
-      if (inNumberedList) {
-        result.push('</ol>');
-        inNumberedList = false;
+      closeLists();
+      continue;
+    }
+
+    // AUTO-REPAIR 1: Truncated <img> tag missing the opening '<img src="'
+    // e.g. https://lh3.googleusercontent.com/d/..." alt="..." style="..." />
+    const brokenImgMatch = rawLine.match(/^(https?:\/\/[^\s"']+)"\s+alt="([^"]*)"\s+style="([^"]*)"\s*\/?>/i);
+    if (brokenImgMatch) {
+      closeLists();
+      result.push(
+        `<p style="text-align:center; margin:16px 0;"><img src="${brokenImgMatch[1]}" alt="${brokenImgMatch[2] || 'Circular Image'}" style="${brokenImgMatch[3]}" /></p>`
+      );
+      continue;
+    }
+
+    // AUTO-REPAIR 2: Standalone image URL on its own line
+    // e.g. https://lh3.googleusercontent.com/d/1Uu-lpfn4PBFsxVh0FtQpngWRuRZkCXT-
+    // or https://example.com/image.jpg
+    const isStandaloneImageUrl =
+      /^https?:\/\/[^\s<"']+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s<"']*)?$/i.test(rawLine) ||
+      /^https:\/\/lh3\.googleusercontent\.com\/d\/[a-zA-Z0-9_-]+$/i.test(rawLine);
+    if (isStandaloneImageUrl) {
+      closeLists();
+      result.push(
+        `<p style="text-align:center; margin:16px 0;"><img src="${rawLine}" alt="চাকরির সার্কুলার ইমেজ" style="max-width:100%; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin:12px auto; display:block;" /></p>`
+      );
+      continue;
+    }
+
+    // AUTO-PRESERVE 3: Lines containing valid <img> tags
+    // e.g. <p style="..."><img src="..." ... /></p> or <img src="..." />
+    if (/<img[\s>]/i.test(rawLine)) {
+      closeLists();
+      if (!rawLine.startsWith('<p')) {
+        result.push(`<p style="text-align:center; margin:16px 0;">${rawLine}</p>`);
+      } else {
+        result.push(rawLine);
       }
       continue;
     }
 
     // Explicit HTML Block Headings: <h1>, <h2>, <h3>, <h4>
     if (/^<h[1-4][\s>]/i.test(rawLine)) {
-      if (inBulletList) {
-        result.push('</ul>');
-        inBulletList = false;
-      }
-      if (inNumberedList) {
-        result.push('</ol>');
-        inNumberedList = false;
-      }
+      closeLists();
       result.push(formatInlineLinks(rawLine));
       continue;
     }
@@ -159,13 +168,13 @@ export function formatJobContent(content: string): string {
         rawLine
       );
 
-    if (isJobHeading && rawLine.length < 90 && !rawLine.startsWith('<p>')) {
+    if (isJobHeading && rawLine.length < 90 && !rawLine.startsWith('<p')) {
       result.push(`<h3>${formatInlineStyles(rawLine)}</h3>`);
       continue;
     }
 
-    // If already wrapped in <p>, keep it but format inline styles
-    if (rawLine.startsWith('<p>') && rawLine.endsWith('</p>')) {
+    // If already wrapped in <p>, keep it but format inline styles safely
+    if (rawLine.startsWith('<p') && rawLine.endsWith('</p>')) {
       result.push(formatInlineLinks(rawLine));
       continue;
     }
@@ -209,12 +218,12 @@ function formatInlineStyles(text: string): string {
 }
 
 /**
- * Turns plain text URLs into clickable links safely
+ * Turns plain text URLs into clickable links safely without breaking HTML tags or attributes
  */
 function formatInlineLinks(text: string): string {
-  // Turn raw URLs into clickable anchor tags (if not already inside an href)
-  return text.replace(
-    /(?<!href=["'])(https?:\/\/[^\s<"']+)/gi,
-    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-  );
+  // Matches HTML tags (<...>) and preserves them untouched; only linkifies raw URLs outside tags
+  return text.replace(/(<[^>]+>)|((https?:\/\/[^\s<"']+))/gi, (match, htmlTag, rawUrl) => {
+    if (htmlTag) return htmlTag;
+    return `<a href="${rawUrl}" target="_blank" rel="noopener noreferrer">${rawUrl}</a>`;
+  });
 }
