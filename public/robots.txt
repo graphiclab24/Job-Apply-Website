@@ -1,0 +1,23 @@
+# Robots.txt for https://bdjobapply.site
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard
+Disallow: /dashboard/
+Disallow: /apply/
+Disallow: /api/
+
+# Allow Googlebot and major search engines full access to jobs and circulars
+User-agent: Googlebot
+Allow: /
+Allow: /jobs
+Allow: /jobs/*
+
+User-agent: Bingbot
+Allow: /
+Allow: /jobs
+Allow: /jobs/*
+
+# Sitemap index
+Sitemap: https://bdjobapply.site/sitemap.xml

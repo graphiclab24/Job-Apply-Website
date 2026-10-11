@@ -127,11 +127,46 @@ export const JobsPage: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <Helmet>
-        <title>সকল সরকারি ও অন্যান্য চাকরির খবর | ২০টি করে পেজিনেশন</title>
+        <title>সকল চাকরির খবর ও সরকারি নিয়োগ বিজ্ঞপ্তি ২০২৬ | BDJobApply.site</title>
         <meta
           name="description"
-          content="চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি খুঁজুন এবং সরাসরি অনলাইনে নির্ভুল আবেদন করুন।"
+          content="চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি ২০২৬ খুঁজুন এবং bdjobapply.site এ সরাসরি অনলাইনে নির্ভুল টেলিটক আবেদন করুন।"
         />
+        <meta
+          name="keywords"
+          content="সরকারি চাকরির খবর, চাকরির খবর ২০২৬, bd job circular, teletalk job apply, সরকারি নিয়োগ বিজ্ঞপ্তি, bdjobapply"
+        />
+        <link rel="canonical" href="https://bdjobapply.site/jobs" />
+
+        {/* OpenGraph */}
+        <meta property="og:site_name" content="BD Job Apply" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="সকল চাকরির খবর ও সরকারি নিয়োগ বিজ্ঞপ্তি ২০২৬ | BDJobApply.site" />
+        <meta
+          property="og:description"
+          content="চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি ২০২৬ খুঁজুন এবং bdjobapply.site এ সরাসরি অনলাইনে আবেদন করুন।"
+        />
+        <meta property="og:url" content="https://bdjobapply.site/jobs" />
+        <meta property="og:image" content="https://bdjobapply.site/og-image.jpg" />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="সকল চাকরির খবর ও সরকারি নিয়োগ বিজ্ঞপ্তি ২০২৬ | BDJobApply.site" />
+        <meta
+          name="twitter:description"
+          content="চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি ২০২৬ খুঁজুন এবং bdjobapply.site এ সরাসরি অনলাইনে আবেদন করুন।"
+        />
+        <meta name="twitter:image" content="https://bdjobapply.site/og-image.jpg" />
+
+        <script type="application/ld+json">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'CollectionPage',
+            name: 'সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি',
+            url: 'https://bdjobapply.site/jobs',
+            description: 'চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি ২০২৬',
+          })}
+        </script>
       </Helmet>
 
       <div className="border-b border-gray-200 pb-4">

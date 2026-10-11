@@ -84,13 +84,51 @@ export const HomePage: React.FC = () => {
   return (
     <div className="space-y-10 pb-12">
       <Helmet>
-        <title>চাকরি আবেদন সার্ভিস প্ল্যাটফর্ম | সকল সরকারি চাকরির খবর ও আবেদন</title>
+        <title>বিডি জব পোর্টাল - সরকারি ও টেলিটক চাকরি আবেদন সার্ভিস | BDJobApply.site</title>
         <meta
           name="description"
-          content="বাংলাদেশের সকল সরকারি ও অন্যান্য চাকরির অনলাইন আবেদন সেবা। অভিজ্ঞ অপারেটর দ্বারা নির্ভুল Teletalk আবেদন ও সফট কপি যাচাই।"
+          content="বাংলাদেশের সকল সরকারি ও অন্যান্য চাকরির অনলাইন আবেদন সেবা। অভিজ্ঞ অপারেটর দ্বারা নির্ভুল Teletalk আবেদন ও সফট কপি যাচাই। বিডি জব এপ্লাই - bdjobapply.site"
         />
-        <meta property="og:title" content="চাকরি আবেদন সার্ভিস প্ল্যাটফর্ম" />
-        <meta property="og:description" content="টেলিটক ও সরকারি চাকরির নির্ভুল অনলাইন আবেদন সেবা।" />
+        <meta
+          name="keywords"
+          content="bdjobapply, bd job apply, চাকরির খবর, সরকারি চাকরি নিয়োগ বিজ্ঞপ্তি ২০২৬, টেলিটক আবেদন, teletalk application, সরকারি চাকরি, চাকরির সার্কুলার"
+        />
+        <link rel="canonical" href="https://bdjobapply.site/" />
+
+        {/* OpenGraph */}
+        <meta property="og:site_name" content="BD Job Apply" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="বিডি জব পোর্টাল - সরকারি ও টেলিটক চাকরি আবেদন সার্ভিস | BDJobApply.site" />
+        <meta
+          property="og:description"
+          content="বাংলাদেশের সকল সরকারি ও টেলিটক চাকরির সর্বশেষ নিয়োগ বিজ্ঞপ্তি, ফলাফল ও ঘরে বসে সরাসরি অনলাইন আবেদন সার্ভিস।"
+        />
+        <meta property="og:url" content="https://bdjobapply.site/" />
+        <meta property="og:image" content="https://bdjobapply.site/og-image.jpg" />
+        <meta property="og:locale" content="bn_BD" />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="বিডি জব পোর্টাল - সরকারি ও টেলিটক চাকরি আবেদন সার্ভিস | BDJobApply.site" />
+        <meta
+          name="twitter:description"
+          content="বাংলাদেশের সকল সরকারি ও টেলিটক চাকরির সর্বশেষ নিয়োগ বিজ্ঞপ্তি ও ঘরে বসে সরাসরি অনলাইন আবেদন সার্ভিস।"
+        />
+        <meta name="twitter:image" content="https://bdjobapply.site/og-image.jpg" />
+
+        <script type="application/ld+json">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            name: 'BD Job Apply',
+            url: 'https://bdjobapply.site/',
+            potentialAction: {
+              '@type': 'SearchAction',
+              target: 'https://bdjobapply.site/jobs?search={search_term_string}',
+              'query-input': 'required name=search_term_string',
+            },
+          })}
+        </script>
       </Helmet>
 
       {/* Hero Banner */}

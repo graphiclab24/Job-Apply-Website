@@ -194,7 +194,7 @@ export const AdminJobFormPage: React.FC = () => {
     const deadlineText = deadline
       ? `আবেদনের শেষ তারিখ: ${new Date(deadline).toLocaleDateString('bn-BD')}।`
       : '';
-    const gen = `${title.trim()} নিয়োগ বিজ্ঞপ্তি প্রকাশ। ${countText}পদের বিবরণ, শিক্ষাগত যোগ্যতা ও শর্তাবলী জেনে টেলিটকে সহজে অনলাইনে আবেদন করুন। ${deadlineText}`.trim();
+    const gen = `${title.trim()} নিয়োগ বিজ্ঞপ্তি প্রকাশ। ${countText}পদের বিবরণ, যোগ্যতা ও শর্তাবলী জেনে টেলিটকে সহজে আবেদন করুন। ${deadlineText} bdjobapply.site`.trim();
     setMetaDescription(gen.slice(0, 160));
     success('স্বয়ংক্রিয় মেটা ডেসক্রিপশন তৈরি করা হয়েছে!');
   };
@@ -722,7 +722,7 @@ export const AdminJobFormPage: React.FC = () => {
 
           <div className="p-4 bg-white rounded-lg border border-gray-200 font-sans shadow-xs space-y-1">
             <div className="text-[11px] text-gray-500 flex items-center gap-1">
-              <span>https://studyonlinebd.com</span>
+              <span className="font-semibold text-emerald-800">https://bdjobapply.site</span>
               <span>›</span>
               <span>jobs</span>
               <span>›</span>
@@ -730,7 +730,7 @@ export const AdminJobFormPage: React.FC = () => {
             </div>
 
             <h4 className="text-blue-700 hover:underline font-medium text-base leading-snug cursor-pointer">
-              {seoTitle || title || 'চাকরির নিয়োগ বিজ্ঞপ্তি | অনলাইনে আবেদন'} | চাকরি আবেদন সার্ভিস
+              {seoTitle || title || 'চাকরির নিয়োগ বিজ্ঞপ্তি | অনলাইনে আবেদন'} | BDJobApply.site
             </h4>
 
             <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">

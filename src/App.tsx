@@ -19,6 +19,8 @@ import { JobDetailsPage } from './pages/public/JobDetailsPage';
 import { LoginPage } from './pages/public/LoginPage';
 import { RegisterPage } from './pages/public/RegisterPage';
 import { NotFoundPage } from './pages/public/NotFoundPage';
+import { SitemapView } from './pages/public/SitemapView';
+import { RobotsView } from './pages/public/RobotsView';
 
 // User Pages
 import { UserDashboardPage } from './pages/user/UserDashboardPage';
@@ -55,6 +57,14 @@ export default function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
               </Route>
+
+              {/* SEO Endpoints (Raw XML / Robots / Google Verification) */}
+              <Route path="/sitemap.xml" element={<SitemapView />} />
+              <Route path="/robots.txt" element={<RobotsView />} />
+              <Route
+                path="/googlec771a2a1a147ff4a.html"
+                element={<pre style={{ margin: 0, padding: '20px' }}>google-site-verification: googlec771a2a1a147ff4a.html</pre>}
+              />
 
               {/* Admin Login (Isolated) */}
               <Route path="/admin/login" element={<AdminLoginPage />} />

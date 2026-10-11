@@ -126,45 +126,81 @@ export const JobDetailsPage: React.FC = () => {
   const isExpired = deadlineDate ? deadlineDate.getTime() < now.getTime() : false;
   const circularLink = job.circularLink || job.circularFile;
 
-  // SEO & Social Meta Configuration
-  const pageTitle = job.seoTitle || `${job.title} | চাকরি আবেদন সার্ভিস`;
+  // SEO & Social Meta Configuration (Branded for bdjobapply.site)
+  const baseDomain = 'https://bdjobapply.site';
+  const canonicalUrl = `${baseDomain}/jobs/${encodeURIComponent(job.slug || job.id)}`;
+  const pageTitle = job.seoTitle
+    ? `${job.seoTitle} | BDJobApply.site`
+    : `${job.title} | BDJobApply.site`;
+
   const metaDescription =
     job.metaDescription ||
     `${job.title}। সরকারি ও টেলিটক অনলাইন আবেদন সেবা। আবেদনের শেষ তারিখ: ${
       deadlineDate ? deadlineDate.toLocaleDateString('bn-BD') : 'বিজ্ঞপ্তি দেখুন'
-    }। পদে পদের যোগ্যতা ও নিয়মাবলি জানুন।`;
+    }। পদে পদের যোগ্যতা ও নিয়মাবলি জানুন। bdjobapply.site`;
+
   const keywordsString =
     job.tags && job.tags.length > 0
       ? job.tags.join(', ')
-      : `${job.title}, সরকারি চাকরি, টেলিটক জব সার্কুলার, নিয়োগ বিজ্ঞপ্তি`;
-  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareImage = coverDataUrl || job.featuredImage || '';
+      : `${job.title}, সরকারি চাকরি, টেলিটক জব সার্কুলার, নিয়োগ বিজ্ঞপ্তি, bdjobapply`;
 
-  // Google JobPosting JSON-LD Schema
-  const jobPostingSchema = {
+  const shareImage = coverDataUrl || job.featuredImage || `${baseDomain}/og-image.jpg`;
+
+  // Google JobPosting & BreadcrumbList JSON-LD Schemas
+  const structuredData = {
     '@context': 'https://schema.org',
-    '@type': 'JobPosting',
-    title: job.title,
-    description: metaDescription,
-    datePosted: job.publishedAt?.toDate
-      ? job.publishedAt.toDate().toISOString()
-      : typeof job.publishedAt === 'string'
-      ? job.publishedAt
-      : new Date().toISOString(),
-    validThrough: deadlineDate ? deadlineDate.toISOString() : undefined,
-    employmentType: 'FULL_TIME',
-    hiringOrganization: {
-      '@type': 'Organization',
-      name: job.category === 'govt' ? 'গণপ্রজাতন্ত্রী বাংলাদেশ সরকার' : 'নিয়োগকারী প্রতিষ্ঠান',
-      sameAs: job.applyLink || 'https://teletalk.com.bd',
-    },
-    jobLocation: {
-      '@type': 'Place',
-      address: {
-        '@type': 'PostalAddress',
-        addressCountry: 'BD',
+    '@graph': [
+      {
+        '@type': 'JobPosting',
+        '@id': `${canonicalUrl}#job`,
+        title: job.title,
+        description: metaDescription,
+        url: canonicalUrl,
+        datePosted: job.publishedAt?.toDate
+          ? job.publishedAt.toDate().toISOString()
+          : typeof job.publishedAt === 'string'
+          ? job.publishedAt
+          : new Date().toISOString(),
+        validThrough: deadlineDate ? deadlineDate.toISOString() : undefined,
+        employmentType: 'FULL_TIME',
+        hiringOrganization: {
+          '@type': 'Organization',
+          name: job.category === 'govt' ? 'গণপ্রজাতন্ত্রী বাংলাদেশ সরকার' : 'নিয়োগকারী কর্তৃপক্ষ',
+          sameAs: job.applyLink || 'https://teletalk.com.bd',
+        },
+        jobLocation: {
+          '@type': 'Place',
+          address: {
+            '@type': 'PostalAddress',
+            addressCountry: 'BD',
+          },
+        },
       },
-    },
+      {
+        '@type': 'BreadcrumbList',
+        '@id': `${canonicalUrl}#breadcrumb`,
+        itemListElement: [
+          {
+            '@type': 'ListItem',
+            position: 1,
+            name: 'হোম',
+            item: `${baseDomain}/`,
+          },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: 'চাকরির খবর',
+            item: `${baseDomain}/jobs`,
+          },
+          {
+            '@type': 'ListItem',
+            position: 3,
+            name: job.title,
+            item: canonicalUrl,
+          },
+        ],
+      },
+    ],
   };
 
   const handleApplyClick = () => {
@@ -181,25 +217,26 @@ export const JobDetailsPage: React.FC = () => {
         <title>{pageTitle}</title>
         <meta name="description" content={metaDescription} />
         <meta name="keywords" content={keywordsString} />
-        <link rel="canonical" href={currentUrl} />
+        <link rel="canonical" href={canonicalUrl} />
 
         {/* OpenGraph / Facebook */}
+        <meta property="og:site_name" content="BD Job Apply" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content={pageTitle} />
         <meta property="og:description" content={metaDescription} />
-        <meta property="og:url" content={currentUrl} />
-        {shareImage && <meta property="og:image" content={shareImage} />}
-        <meta property="og:site_name" content="BD Job Portal" />
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:image" content={shareImage} />
+        <meta property="og:locale" content="bn_BD" />
 
         {/* Twitter Cards */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={pageTitle} />
         <meta name="twitter:description" content={metaDescription} />
-        {shareImage && <meta name="twitter:image" content={shareImage} />}
+        <meta name="twitter:image" content={shareImage} />
 
-        {/* Google Jobs Structured Data (Schema.org) */}
+        {/* Google Jobs & Breadcrumb Structured Data */}
         <script type="application/ld+json">
-          {JSON.stringify(jobPostingSchema)}
+          {JSON.stringify(structuredData)}
         </script>
       </Helmet>
 
