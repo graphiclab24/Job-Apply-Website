@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
+import { repairCorruptedJobHtml } from './src/utils/formatJobContent';
 
 dotenv.config();
 
@@ -74,6 +75,7 @@ STRICT INSTRUCTIONS:
     let formattedHtml = response.text || '';
     // Strip any markdown codeblock backticks if returned
     formattedHtml = formattedHtml.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+    formattedHtml = repairCorruptedJobHtml(formattedHtml);
 
     res.json({ formattedHtml });
   } catch (err: any) {

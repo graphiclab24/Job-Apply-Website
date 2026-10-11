@@ -1,25 +1,73 @@
 /**
- * Smart Job Content Formatter & Markdown-HTML Parser
- * Seamlessly handles:
+ * Smart Job Content Formatter & HTML Repair Engine
+ *
+ * Repairs corrupted HTML (nested <a>, corrupted <img src="<a href="...">">, doubled <p>)
+ * and cleanly renders:
  * - Images (HTML <img>, Google Drive lh3 URLs, broken/truncated img tags auto-repaired)
  * - Markdown (# H1, ## H2, ### H3, **bold**, *italic*, - bullets, 1. numbered)
  * - Raw Bengali circular text (auto-detects headings, key-value bolding, bullet points)
  * - HTML tags (<h1>, <h2>, <h3>, <b>, <strong>, <i>, <ul>, <ol>, <table>, <a>, <img>)
  */
 
+export function repairCorruptedJobHtml(text: string): string {
+  if (!text) return '';
+
+  let cleaned = text;
+
+  // 1. Repair <img src="<a href="URL"...>...</a>" ...>
+  // Caused by regex linkifiers injecting <a> tags inside <img src="...">
+  cleaned = cleaned.replace(
+    /<img\s+src=["\x27]<a\s+href=["\x27](https?:\/\/[^\s"\x27]+)["\x27][^>]*>[\s\S]*?<\/a>["\x27]/gi,
+    '<img src="$1"'
+  );
+
+  // 2. Repair broken <img tag where opening "<img src=" was stripped or cut off
+  cleaned = cleaned.replace(
+    /(?:<p[^>]*>\s*)?(?<!<img[^>]*src=["\x27])\b(https?:\/\/[^\s"\x27\<\>]+)["\x27]\s+alt=["\x27]([^"\x27]*)["\x27]\s+style=["\x27]([^"\x27]*)["\x27]\s*\/?>(\s*<\/p>)?/gi,
+    '<p style="text-align:center; margin:16px 0;"><img src="$1" alt="$2" style="$3" /></p>'
+  );
+
+  // 3. Repair multiple nested <a> tags: e.g. <a href="..."><a href="...">...</a></a>
+  let prev;
+  do {
+    prev = cleaned;
+    cleaned = cleaned.replace(
+      /<a\s+href=["\x27]([^"\x27]+)["\x27][^>]*>\s*<a\s+href=["\x27][^"\x27]*["\x27][^>]*>([\s\S]*?)<\/a>\s*<\/a>/gi,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>'
+    );
+  } while (cleaned !== prev);
+
+  // 4. Repair doubled/nested <p><p ...>
+  cleaned = cleaned.replace(/<p>\s*<p\b([^>]*)>/gi, '<p$1>').replace(/<\/p>\s*<\/p>/gi, '</p>');
+
+  return cleaned;
+}
+
 export function formatJobContent(content: string): string {
   if (!content) return '';
 
-  let text = content.trim();
+  // Step 1: Run comprehensive HTML repair
+  let text = repairCorruptedJobHtml(content.trim());
 
-  // 1. Process inline markdown:
-  // **bold** or __bold__ -> <b>...</b>
+  // Step 2: If the content is ALREADY complete semantic HTML (has <h1>/<h3>/<p> tags)
+  // return it directly without running plain-text line parser!
+  const hasHtmlStructure =
+    /<(h[1-6]|table|ul|ol)\b/i.test(text) ||
+    (/<p\b/i.test(text) && /<\/p>/i.test(text) && text.split(/<\/(?:p|h[1-6]|ul|ol|table)>/i).length > 2);
+
+  if (hasHtmlStructure) {
+    // Only repair inline markdown (bold/italic) and preserve all existing HTML structure
+    text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    text = text.replace(/__(.*?)__/g, '<b>$1</b>');
+    return repairCorruptedJobHtml(text);
+  }
+
+  // Step 3: Raw plain-text / Markdown circular parsing
+  // Process inline markdown:
   text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   text = text.replace(/__(.*?)__/g, '<b>$1</b>');
-  // *italic* or _italic_ -> <i>...</i>
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
 
-  // 2. Parse lines
   const lines = text.split(/\r?\n/);
   const result: string[] = [];
   let inBulletList = false;
@@ -50,20 +98,8 @@ export function formatJobContent(content: string): string {
       continue;
     }
 
-    // AUTO-REPAIR 1: Truncated <img> tag missing the opening '<img src="'
-    // e.g. https://lh3.googleusercontent.com/d/..." alt="..." style="..." />
-    const brokenImgMatch = rawLine.match(/^(https?:\/\/[^\s"']+)"\s+alt="([^"]*)"\s+style="([^"]*)"\s*\/?>/i);
-    if (brokenImgMatch) {
-      closeLists();
-      result.push(
-        `<p style="text-align:center; margin:16px 0;"><img src="${brokenImgMatch[1]}" alt="${brokenImgMatch[2] || 'Circular Image'}" style="${brokenImgMatch[3]}" /></p>`
-      );
-      continue;
-    }
-
-    // AUTO-REPAIR 2: Standalone image URL on its own line
+    // Standalone image URL on its own line:
     // e.g. https://lh3.googleusercontent.com/d/1Uu-lpfn4PBFsxVh0FtQpngWRuRZkCXT-
-    // or https://example.com/image.jpg
     const isStandaloneImageUrl =
       /^https?:\/\/[^\s<"']+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s<"']*)?$/i.test(rawLine) ||
       /^https:\/\/lh3\.googleusercontent\.com\/d\/[a-zA-Z0-9_-]+$/i.test(rawLine);
@@ -75,8 +111,7 @@ export function formatJobContent(content: string): string {
       continue;
     }
 
-    // AUTO-PRESERVE 3: Lines containing valid <img> tags
-    // e.g. <p style="..."><img src="..." ... /></p> or <img src="..." />
+    // Lines containing existing <img> tags: preserve as-is without touching
     if (/<img[\s>]/i.test(rawLine)) {
       closeLists();
       if (!rawLine.startsWith('<p')) {
@@ -90,7 +125,7 @@ export function formatJobContent(content: string): string {
     // Explicit HTML Block Headings: <h1>, <h2>, <h3>, <h4>
     if (/^<h[1-4][\s>]/i.test(rawLine)) {
       closeLists();
-      result.push(formatInlineLinks(rawLine));
+      result.push(rawLine);
       continue;
     }
 
@@ -160,7 +195,6 @@ export function formatJobContent(content: string): string {
     closeLists();
 
     // Section headings detection in BD job circulars
-    // (e.g. "পদের বিবরণ:", "শিক্ষাগত যোগ্যতা:", "আবেদনের নিয়মাবলী:", "শর্তাবলী:", "প্রয়োজনীয় কাগজপত্র:")
     const isJobHeading =
       rawLine.endsWith(':') ||
       rawLine.endsWith('ঃ') ||
@@ -173,9 +207,9 @@ export function formatJobContent(content: string): string {
       continue;
     }
 
-    // If already wrapped in <p>, keep it but format inline styles safely
+    // If already wrapped in <p>, keep it
     if (rawLine.startsWith('<p') && rawLine.endsWith('</p>')) {
-      result.push(formatInlineLinks(rawLine));
+      result.push(rawLine);
       continue;
     }
 
@@ -189,7 +223,7 @@ export function formatJobContent(content: string): string {
     result.push(tableBuffer.join('\n'));
   }
 
-  return result.join('\n');
+  return repairCorruptedJobHtml(result.join('\n'));
 
   function closeLists() {
     if (inBulletList) {
@@ -221,9 +255,9 @@ function formatInlineStyles(text: string): string {
  * Turns plain text URLs into clickable links safely without breaking HTML tags or attributes
  */
 function formatInlineLinks(text: string): string {
-  // Matches HTML tags (<...>) and preserves them untouched; only linkifies raw URLs outside tags
-  return text.replace(/(<[^>]+>)|((https?:\/\/[^\s<"']+))/gi, (match, htmlTag, rawUrl) => {
-    if (htmlTag) return htmlTag;
-    return `<a href="${rawUrl}" target="_blank" rel="noopener noreferrer">${rawUrl}</a>`;
-  });
+  // If the line already has <a or <img, do NOT alter it!
+  if (/<a\s|<img\s/i.test(text)) {
+    return text;
+  }
+  return text.replace(/(https?:\/\/[^\s<"']+)/gi, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 }
