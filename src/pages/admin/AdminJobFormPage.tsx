@@ -36,6 +36,10 @@ import {
   AlertTriangle,
   X,
   ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Wand2,
+  FileText,
 } from 'lucide-react';
 
 export const AdminJobFormPage: React.FC = () => {
@@ -72,6 +76,66 @@ export const AdminJobFormPage: React.FC = () => {
   const [focusKeyword, setFocusKeyword] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+
+  // AI Autofill States
+  const [aiAutofillOpen, setAiAutofillOpen] = useState(true);
+  const [aiInputMode, setAiInputMode] = useState<'url' | 'text'>('url');
+  const [aiSourceUrl, setAiSourceUrl] = useState('');
+  const [aiSourceText, setAiSourceText] = useState('');
+  const [aiExtracting, setAiExtracting] = useState(false);
+
+  const handleAiAutofill = async () => {
+    if (aiInputMode === 'url' && !aiSourceUrl.trim()) {
+      error('অনুগ্রহ করে ওয়েবসাইটের লিঙ্ক দিন');
+      return;
+    }
+    if (aiInputMode === 'text' && !aiSourceText.trim()) {
+      error('অনুগ্রহ করে সার্কুলারের টেক্সট পেস্ট করুন');
+      return;
+    }
+
+    setAiExtracting(true);
+    try {
+      const res = await fetch('/api/ai/extract-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: aiInputMode === 'url' ? aiSourceUrl.trim() : undefined,
+          rawText: aiInputMode === 'text' ? aiSourceText.trim() : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'AI এক্সট্রাকশন সম্পন্ন করা যায়নি');
+      }
+
+      const data = await res.json();
+
+      if (data.title) setTitle(data.title);
+      if (data.slug) setSlug(data.slug);
+      if (data.category) setCategory(data.category);
+      if (data.deadline) setDeadline(data.deadline);
+      if (data.applyLink) setApplyLink(data.applyLink);
+      if (data.circularLink) setCircularLink(data.circularLink);
+      if (data.applicationFee !== undefined) setApplicationFee(Number(data.applicationFee) || 0);
+      if (data.serviceCharge !== undefined) setServiceCharge(Number(data.serviceCharge) || 20);
+      if (Array.isArray(data.posts) && data.posts.length > 0) setPosts(data.posts);
+      if (data.content) setContent(data.content);
+      if (data.seoTitle) setSeoTitle(data.seoTitle);
+      if (data.metaDescription) setMetaDescription(data.metaDescription);
+      if (data.focusKeyword) setFocusKeyword(data.focusKeyword);
+      if (Array.isArray(data.tags) && data.tags.length > 0) setTags(data.tags);
+
+      success('✨ Gemini AI সফলভাবে সকল ফিল্ড পূরণ করেছে! প্রতিযোগী সাইট থেকে উন্নত এসইও প্রস্তুত।');
+      setAiAutofillOpen(false);
+    } catch (err: any) {
+      console.error('AI autofill error:', err);
+      error(err.message || 'AI এক্সট্রাকশন ব্যর্থ হয়েছে। লিঙ্ক বা টেক্সট সঠিক কি না যাচাই করুন।');
+    } finally {
+      setAiExtracting(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -315,6 +379,127 @@ export const AdminJobFormPage: React.FC = () => {
         <Button type="submit" loading={saving} icon={<Save className="w-4 h-4" />}>
           {isEdit ? 'আপডেট করুন' : 'প্রকাশ করুন'}
         </Button>
+      </div>
+
+      {/* AI Smart Autofill Card (Competitor Outranking & Full Generator) */}
+      <div className="bg-gradient-to-br from-emerald-900 via-teal-950 to-slate-900 text-white rounded-2xl p-5 shadow-xl border border-emerald-500/30 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-inner">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-white">✨ AI স্মার্ট সার্কুলার অটোফিল</h3>
+                <span className="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
+                  SEO স্পেশালাইজড • প্রতিযোগী আউটর‍্যাঙ্ক
+                </span>
+              </div>
+              <p className="text-xs text-emerald-200/80 mt-0.5">
+                অন্য যেকোনো সাইটের লিংক দিন অথবা টেক্সট পেস্ট করুন—Gemini AI নিখুঁতভাবে টাইটেল, স্লাগ, মেটা ট্যাগ, পদসংখ্যা ও টেবিল সহ সকল ফিল্ড স্বয়ংক্রিয়ভাবে পূরণ করবে!
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAiAutofillOpen(!aiAutofillOpen)}
+            className="p-1.5 text-emerald-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+            title={aiAutofillOpen ? 'সংকোচন করুন' : 'প্রসারিত করুন'}
+          >
+            {aiAutofillOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {aiAutofillOpen && (
+          <div className="space-y-3.5 pt-2 border-t border-white/10">
+            {/* Mode switch */}
+            <div className="inline-flex p-1 bg-black/40 rounded-xl border border-white/10 text-xs">
+              <button
+                type="button"
+                onClick={() => setAiInputMode('url')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                  aiInputMode === 'url'
+                    ? 'bg-emerald-500 text-white shadow-xs'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>🌐 ওয়েবসাইটের লিঙ্ক দিন</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiInputMode('text')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                  aiInputMode === 'text'
+                    ? 'bg-emerald-500 text-white shadow-xs'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>📝 টেক্সট পেস্ট করুন</span>
+              </button>
+            </div>
+
+            {/* Input fields */}
+            {aiInputMode === 'url' ? (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-emerald-200">
+                  প্রতিযোগী বা অন্য কোনো জব সাইটের সার্কুলার লিঙ্ক (URL):
+                </label>
+                <div className="relative">
+                  <Globe className="w-4 h-4 absolute left-3.5 top-3 text-gray-400" />
+                  <input
+                    type="url"
+                    value={aiSourceUrl}
+                    onChange={(e) => setAiSourceUrl(e.target.value)}
+                    placeholder="যেমন: https://example.com/job-circular-news-2026"
+                    className="w-full pl-10 pr-4 py-2.5 bg-black/30 border border-emerald-500/40 rounded-xl text-white placeholder-gray-400 text-xs focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-emerald-200">
+                  সার্কুলারের কাঁচা টেক্সট বা খসড়া বিবরণ:
+                </label>
+                <textarea
+                  value={aiSourceText}
+                  onChange={(e) => setAiSourceText(e.target.value)}
+                  placeholder="বিজ্ঞপ্তির টেক্সট বা বিবরণ এখানে পেস্ট করুন..."
+                  rows={3}
+                  className="w-full p-3 bg-black/30 border border-emerald-500/40 rounded-xl text-white placeholder-gray-400 text-xs focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                />
+              </div>
+            )}
+
+            {/* Submit action */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                💡 <span className="font-semibold text-emerald-200">আউটর‍্যাঙ্ক গ্যারান্টি:</span> মূল তথ্যাদি হুবহু বজায় রেখে গুগলের চোখে ইউনিক ও প্রিমিয়াম করার জন্য স্বয়ংক্রিয়ভাবে টেবিল, হেডিং এবং হাই-সিপিআর মেটা ট্যাগ তৈরি হবে।
+              </p>
+
+              <button
+                type="button"
+                onClick={handleAiAutofill}
+                disabled={aiExtracting}
+                className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 text-slate-950 font-bold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                {aiExtracting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                    <span>Gemini AI বিশ্লেষণ ও ফিল্ড পূরণ করছে...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-4 h-4 text-slate-950" />
+                    <span>✨ সকল ফিল্ড অটোফিল করুন</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
