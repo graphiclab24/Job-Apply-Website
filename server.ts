@@ -104,26 +104,64 @@ ${content.trim()}`;
  * Scrape competitor job page and convert HTML into readable text
  */
 async function scrapeJobPageText(pageUrl: string): Promise<string> {
-  const parsed = new URL(pageUrl);
+  let url = pageUrl.trim();
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('অবৈধ লিঙ্ক ফরম্যাট। অনুগ্রহ করে একটি সঠিক ওয়েবসাইট লিংক দিন।');
+  }
+
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('অবৈধ লিঙ্ক প্রোটোকল। শুধুমাত্র http/https সাপোর্ট করে।');
+    throw new Error('অবৈধ লিঙ্ক প্রোটোকল। শুধুমাত্র http:// বা https:// সাপোর্ট করে।');
   }
 
-  const response = await fetch(pageUrl, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'bn,en-US;q=0.9,en;q=0.8',
-    },
-    signal: AbortSignal.timeout(15000),
-  });
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  ];
 
-  if (!response.ok) {
-    throw new Error(`ওয়েবসাইট থেকে তথ্য লোড করা যায়নি (HTTP ${response.status})`);
+  let lastStatus = 0;
+  let html = '';
+
+  for (const ua of userAgents) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': ua,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'bn,en-US;q=0.9,en;q=0.8',
+          'Cache-Control': 'no-cache',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(12000),
+      });
+
+      lastStatus = response.status;
+      if (response.ok) {
+        html = await response.text();
+        if (html && html.length > 100) break;
+      }
+    } catch (err: any) {
+      console.warn(`Fetch attempt with UA failed: ${err.message}`);
+    }
   }
 
-  const html = await response.text();
+  if (!html) {
+    if (lastStatus === 403 || lastStatus === 401) {
+      throw new Error(
+        `প্রতিযোগী সাইটটি সরাসরি লিংক স্ক্র্যাপ করা ব্লক করেছে (Cloudflare/HTTP ${lastStatus})। অনুগ্রহ করে সেই পেজের টেক্সটগুলো কপি করে "📝 টেক্সট পেস্ট করুন" ট্যাবে পেস্ট করুন, AI মুহূর্তেই সম্পূর্ণ ফর্ম পূরণ করবে!`
+      );
+    }
+    throw new Error(
+      `ওয়েবসাইট থেকে তথ্য লোড করা যায়নি (HTTP ${lastStatus || 'টাইমআউট'})। অনুগ্রহ করে সেই পেজের টেক্সটগুলো কপি করে "📝 টেক্সট পেস্ট করুন" ট্যাবে পেস্ট করুন।`
+    );
+  }
 
   // Strip non-content tags
   const cleanHtml = html

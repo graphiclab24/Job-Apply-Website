@@ -83,8 +83,10 @@ export const AdminJobFormPage: React.FC = () => {
   const [aiSourceUrl, setAiSourceUrl] = useState('');
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiExtracting, setAiExtracting] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const handleAiAutofill = async () => {
+    setAiError('');
     if (aiInputMode === 'url' && !aiSourceUrl.trim()) {
       error('অনুগ্রহ করে ওয়েবসাইটের লিঙ্ক দিন');
       return;
@@ -129,9 +131,15 @@ export const AdminJobFormPage: React.FC = () => {
 
       success('✨ Gemini AI সফলভাবে সকল ফিল্ড পূরণ করেছে! প্রতিযোগী সাইট থেকে উন্নত এসইও প্রস্তুত।');
       setAiAutofillOpen(false);
+      setAiError('');
     } catch (err: any) {
       console.error('AI autofill error:', err);
-      error(err.message || 'AI এক্সট্রাকশন ব্যর্থ হয়েছে। লিঙ্ক বা টেক্সট সঠিক কি না যাচাই করুন।');
+      const msg = err.message || 'AI এক্সট্রাকশন ব্যর্থ হয়েছে। লিঙ্ক বা টেক্সট সঠিক কি না যাচাই করুন।';
+      setAiError(msg);
+      error(msg);
+      if (msg.includes('টেক্সট') || msg.includes('ব্লক') || msg.includes('Cloudflare')) {
+        setAiInputMode('text');
+      }
     } finally {
       setAiExtracting(false);
     }
@@ -413,6 +421,19 @@ export const AdminJobFormPage: React.FC = () => {
 
         {aiAutofillOpen && (
           <div className="space-y-3.5 pt-2 border-t border-white/10">
+            {/* Error guidance banner */}
+            {aiError && (
+              <div className="p-3 bg-rose-950/80 border border-rose-500/50 rounded-xl text-rose-200 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <span className="font-semibold block text-white">{aiError}</span>
+                  <p className="text-[11px] text-rose-300">
+                    💡 <strong>সহজ সমাধান:</strong> সাইটটি হয়তো সরাসরি লিঙ্ক রিড করা ব্লক করেছে (Cloudflare/Anti-bot)। আপনি শুধু সেই পেজের টেক্সটগুলো কপি করে <strong>&quot;📝 টেক্সট পেস্ট করুন&quot;</strong> ট্যাবে পেস্ট করুন, AI মুহূর্তেই বাকি সব পূরণ করবে!
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Mode switch */}
             <div className="inline-flex p-1 bg-black/40 rounded-xl border border-white/10 text-xs">
               <button
