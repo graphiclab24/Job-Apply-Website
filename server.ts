@@ -2,7 +2,8 @@ import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
-import { repairCorruptedJobHtml } from './src/utils/formatJobContent';
+import { formatJobContent, repairCorruptedJobHtml } from './src/utils/formatJobContent';
+import { extractJobLocally } from './src/utils/localJobExtractor';
 
 dotenv.config();
 
@@ -18,10 +19,10 @@ const ai = new GoogleGenAI();
  * Resilient Gemini generator with retry and automatic fallback for transient 503/429 spikes
  */
 async function generateWithGemini(prompt: string, jsonMode: boolean = false): Promise<string> {
-  const models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const models = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    for (const model of models) {
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const res = await ai.models.generateContent({
           model,
@@ -30,14 +31,15 @@ async function generateWithGemini(prompt: string, jsonMode: boolean = false): Pr
         });
         if (res.text) return res.text;
       } catch (err: any) {
-        console.warn(`Model ${model} attempt ${attempt + 1} notice: ${err?.message || err}.`);
-        // If transient, wait briefly before next attempt
-        await new Promise((r) => setTimeout(r, 600));
+        console.warn(`Model ${model} (attempt ${attempt}) notice: ${err?.message || err}.`);
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
       }
     }
   }
 
-  throw new Error('AI মডেলটি বর্তমানে ব্যস্ত রয়েছে। অনুগ্রহ করে কয়েক সেকেন্ড পর পুনরায় চেষ্টা করুন।');
+  throw new Error('AI মডেলটি বর্তমানে ব্যস্ত রয়েছে।');
 }
 
 /**
@@ -88,15 +90,20 @@ STRICT INSTRUCTIONS:
 Raw Circular Text to Format:
 ${content.trim()}`;
 
-    let formattedHtml = await generateWithGemini(systemPrompt, false);
-    // Strip any markdown codeblock backticks if returned
-    formattedHtml = formattedHtml.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
-    formattedHtml = repairCorruptedJobHtml(formattedHtml);
+    let formattedHtml = '';
+    try {
+      formattedHtml = await generateWithGemini(systemPrompt, false);
+      formattedHtml = formattedHtml.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+      formattedHtml = repairCorruptedJobHtml(formattedHtml);
+    } catch (aiErr: any) {
+      console.warn('Gemini format-job transient notice, fallback to smart formatter:', aiErr?.message);
+      formattedHtml = repairCorruptedJobHtml(formatJobContent(content));
+    }
 
     res.json({ formattedHtml });
   } catch (err: any) {
-    console.error('Gemini job formatting error:', err);
-    res.status(500).json({ error: err.message || 'AI formatting failed' });
+    console.error('Job formatting error:', err);
+    res.status(500).json({ error: err.message || 'Formatting failed' });
   }
 });
 
@@ -270,20 +277,26 @@ RESPOND IN PURE JSON (no markdown fences, no \`\`\`json):
   "tags": ["tag1", "tag2"]
 }`;
 
-    let rawJson = await generateWithGemini(extractionPrompt, true);
-    rawJson = rawJson.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    try {
+      let rawJson = await generateWithGemini(extractionPrompt, true);
+      rawJson = rawJson.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
 
-    const parsedData = JSON.parse(rawJson);
+      const parsedData = JSON.parse(rawJson);
 
-    // Sanitize content HTML
-    if (parsedData.content) {
-      parsedData.content = repairCorruptedJobHtml(parsedData.content);
+      // Sanitize content HTML
+      if (parsedData.content) {
+        parsedData.content = repairCorruptedJobHtml(parsedData.content);
+      }
+
+      return res.json(parsedData);
+    } catch (aiErr: any) {
+      console.warn('Gemini extraction notice, falling back to instant local smart extractor:', aiErr?.message);
+      const fallbackData = extractJobLocally(sourceText);
+      return res.json(fallbackData);
     }
-
-    res.json(parsedData);
   } catch (err: any) {
-    console.error('Gemini job extraction error:', err);
-    res.status(500).json({ error: err.message || 'AI এক্সট্রাকশন ব্যর্থ হয়েছে' });
+    console.error('Job extraction error:', err);
+    res.status(500).json({ error: err.message || 'এক্সট্রাকশন সম্পন্ন করা যায়নি' });
   }
 });
 

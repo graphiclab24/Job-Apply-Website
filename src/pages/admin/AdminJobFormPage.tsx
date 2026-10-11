@@ -20,6 +20,7 @@ import { RichTextEditor } from '../../components/common/RichTextEditor';
 import { JobPostsTableSection } from '../../components/admin/JobPostsTableSection';
 import { DrivePickerButton } from '../../components/drive/DrivePickerButton';
 import { generateSlug } from '../../utils/slugify';
+import { extractJobLocally } from '../../utils/localJobExtractor';
 import { useToast } from '../../components/common/Toast';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -87,33 +88,34 @@ export const AdminJobFormPage: React.FC = () => {
 
   const handleAiAutofill = async () => {
     setAiError('');
-    if (aiInputMode === 'url' && !aiSourceUrl.trim()) {
+
+    // Auto-detect if user mistakenly pasted raw circular text into the URL box
+    let currentMode = aiInputMode;
+    let urlVal = aiSourceUrl.trim();
+    let textVal = aiSourceText.trim();
+
+    if (currentMode === 'url' && urlVal) {
+      const isLikelyRawText = urlVal.length > 120 || /[\u0980-\u09FF]|\n|<[a-z]/i.test(urlVal);
+      if (isLikelyRawText) {
+        currentMode = 'text';
+        textVal = urlVal;
+        setAiInputMode('text');
+        setAiSourceText(urlVal);
+      }
+    }
+
+    if (currentMode === 'url' && !urlVal) {
       error('অনুগ্রহ করে ওয়েবসাইটের লিঙ্ক দিন');
       return;
     }
-    if (aiInputMode === 'text' && !aiSourceText.trim()) {
+    if (currentMode === 'text' && !textVal) {
       error('অনুগ্রহ করে সার্কুলারের টেক্সট পেস্ট করুন');
       return;
     }
 
     setAiExtracting(true);
-    try {
-      const res = await fetch('/api/ai/extract-job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: aiInputMode === 'url' ? aiSourceUrl.trim() : undefined,
-          rawText: aiInputMode === 'text' ? aiSourceText.trim() : undefined,
-        }),
-      });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'AI এক্সট্রাকশন সম্পন্ন করা যায়নি');
-      }
-
-      const data = await res.json();
-
+    const applyExtractedData = (data: any) => {
       if (data.title) setTitle(data.title);
       if (data.slug) setSlug(data.slug);
       if (data.category) setCategory(data.category);
@@ -128,21 +130,61 @@ export const AdminJobFormPage: React.FC = () => {
       if (data.metaDescription) setMetaDescription(data.metaDescription);
       if (data.focusKeyword) setFocusKeyword(data.focusKeyword);
       if (Array.isArray(data.tags) && data.tags.length > 0) setTags(data.tags);
+    };
 
-      success('✨ Gemini AI সফলভাবে সকল ফিল্ড পূরণ করেছে! প্রতিযোগী সাইট থেকে উন্নত এসইও প্রস্তুত।');
-      setAiAutofillOpen(false);
-      setAiError('');
-    } catch (err: any) {
-      console.error('AI autofill error:', err);
-      const msg = err.message || 'AI এক্সট্রাকশন ব্যর্থ হয়েছে। লিঙ্ক বা টেক্সট সঠিক কি না যাচাই করুন।';
-      setAiError(msg);
-      error(msg);
-      if (msg.includes('টেক্সট') || msg.includes('ব্লক') || msg.includes('Cloudflare')) {
-        setAiInputMode('text');
+    // 1. First attempt: Full-stack AI extractor
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+      const res = await fetch('/api/ai/extract-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: currentMode === 'url' ? urlVal : undefined,
+          rawText: currentMode === 'text' ? textVal : undefined,
+        }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (res.ok) {
+        const data = await res.json();
+        applyExtractedData(data);
+        success('✨ সফলভাবে সকল ফিল্ড পূরণ করা হয়েছে! টাইটেল, স্লাগ, মেটা ট্যাগ ও বিবরণ প্রস্তুত।');
+        setAiAutofillOpen(false);
+        setAiError('');
+        setAiExtracting(false);
+        return;
+      } else {
+        const errJson = await res.json().catch(() => null);
+        console.warn('Backend extract-job non-200 response:', errJson);
       }
-    } finally {
-      setAiExtracting(false);
+    } catch (apiErr: any) {
+      console.warn('Backend AI extractor notice, activating resilient local smart extractor:', apiErr);
     }
+
+    // 2. Resilient fallback: If raw text is available, immediately extract locally with 100% guarantee!
+    if (textVal) {
+      try {
+        const localData = extractJobLocally(textVal);
+        applyExtractedData(localData);
+        success('✨ স্মার্ট ইঞ্জিনের মাধ্যমে সকল ফিল্ড সফলভাবে পূরণ করা হয়েছে!');
+        setAiAutofillOpen(false);
+        setAiError('');
+        setAiExtracting(false);
+        return;
+      } catch (localErr: any) {
+        console.error('Local extractor error:', localErr);
+      }
+    }
+
+    // 3. If in URL mode and fetch failed (e.g. Cloudflare block on competitor website)
+    const msg =
+      'প্রতিযোগী সাইটটি সরাসরি লিংক স্ক্র্যাপ করা ব্লক করেছে (Cloudflare/Anti-bot)। অনুগ্রহ করে সেই পেজের টেক্সটগুলো কপি করে "📝 টেক্সট পেস্ট করুন" ট্যাবে পেস্ট করুন, এক ক্লিকে সম্পূর্ণ ফর্ম পূরণ হবে!';
+    setAiError(msg);
+    error(msg);
+    setAiInputMode('text');
+    setAiExtracting(false);
   };
 
   useEffect(() => {
