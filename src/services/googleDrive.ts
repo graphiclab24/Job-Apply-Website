@@ -54,7 +54,80 @@ export function setDriveAccessToken(token: string, user?: { email?: string | nul
 }
 
 /**
- * Connect Google Drive via Google Popup Auth
+ * Direct Google Identity Services (GIS) Token Client fallback
+ * Bypasses Firebase Auth domain restrictions when connecting Google Drive
+ */
+export async function connectViaGoogleIdentityServices(): Promise<{ accessToken: string; user?: any }> {
+  return new Promise((resolve, reject) => {
+    const clientId = '467012089664-sa0bqcpq1hv0qttsj43fur4ish556v6i.apps.googleusercontent.com';
+    const scopes = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file';
+
+    const triggerClient = () => {
+      try {
+        if (!(window as any).google?.accounts?.oauth2) {
+          reject(new Error('Google Identity Services লোড করা যায়নি'));
+          return;
+        }
+
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: scopes,
+          callback: async (resp: any) => {
+            if (resp.error) {
+              reject(new Error(resp.error_description || resp.error));
+              return;
+            }
+            if (resp.access_token) {
+              cachedAccessToken = resp.access_token;
+
+              // Fetch basic user profile
+              let driveUser: any = null;
+              try {
+                const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${resp.access_token}` },
+                });
+                if (userRes.ok) {
+                  const u = await userRes.json();
+                  driveUser = {
+                    email: u.email,
+                    name: u.name,
+                    photoURL: u.picture,
+                  };
+                  cachedDriveUser = driveUser;
+                }
+              } catch (uErr) {
+                console.warn('Could not fetch user profile:', uErr);
+              }
+
+              resolve({ accessToken: resp.access_token, user: driveUser });
+            } else {
+              reject(new Error('Google Access Token পাওয়া যায়নি'));
+            }
+          },
+        });
+
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    if (!(window as any).google?.accounts?.oauth2) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = triggerClient;
+      script.onerror = () => reject(new Error('Google GIS স্ক্রিপ্ট লোড ব্যর্থ হয়েছে'));
+      document.head.appendChild(script);
+    } else {
+      triggerClient();
+    }
+  });
+}
+
+/**
+ * Connect Google Drive via Google Popup Auth (with automatic GIS fallback)
  */
 export async function connectGoogleDrive(): Promise<{ accessToken: string; user: any }> {
   try {
@@ -76,11 +149,22 @@ export async function connectGoogleDrive(): Promise<{ accessToken: string; user:
       user: result.user,
     };
   } catch (error: any) {
-    console.error('Google Drive connection error:', error);
+    console.warn('Firebase popup connection error, attempting Google Identity Services fallback:', error);
+
+    // If Firebase Auth throws unauthorized-domain, automatically try Google Identity Services!
     if (error?.code === 'auth/unauthorized-domain') {
-      throw new Error(
-        'ডোমেইন অনুমোদিত নয় (auth/unauthorized-domain)। অনুগ্রহ করে Firebase Console -> Authentication -> Settings -> Authorized Domains এ গিয়ে bdjobapply.site যোগ করুন।'
-      );
+      try {
+        const gisResult = await connectViaGoogleIdentityServices();
+        return {
+          accessToken: gisResult.accessToken,
+          user: gisResult.user || { email: 'Connected Google Account' },
+        };
+      } catch (gisError: any) {
+        console.error('GIS fallback error:', gisError);
+        throw new Error(
+          'ডোমেইন অনুমোদিত নয় (auth/unauthorized-domain)। নিশ্চিত করুন Firebase Console-এর "gen-lang-client-0467244762" প্রজেক্টে bdjobapply.site যুক্ত করেছেন।'
+        );
+      }
     }
     throw error;
   }
