@@ -197,9 +197,22 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
 
         {/* Alerts */}
         {errorMsg && (
-          <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{errorMsg}</span>
+          <div className="mx-6 mt-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <span className="font-bold block">{errorMsg}</span>
+              {(errorMsg.includes('unauthorized-domain') || errorMsg.includes('অনুমোদিত নয়')) && (
+                <div className="bg-white/90 p-2.5 rounded-lg border border-rose-200 text-[11px] text-gray-800 space-y-1 mt-1.5">
+                  <p className="font-bold text-rose-700">💡 সমাধান পদ্ধতি (মাত্র ৩০ সেকেন্ড):</p>
+                  <ol className="list-decimal pl-4 space-y-0.5 text-gray-700">
+                    <li><strong>Firebase Console</strong>-এ যান।</li>
+                    <li>বাম পাশের মেনু থেকে <strong>Authentication</strong>-এ যান।</li>
+                    <li>উপরের <strong>Settings</strong> ট্যাবে ক্লিক করে <strong>Authorized domains</strong>-এ যান।</li>
+                    <li><strong>Add domain</strong> বাটনে ক্লিক করে <code>bdjobapply.site</code> লিখে <strong>Done</strong> চাপুন।</li>
+                  </ol>
+                </div>
+              )}
+            </div>
           </div>
         )}
         {successMsg && (

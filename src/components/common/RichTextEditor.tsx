@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { formatJobContent } from '../../utils/formatJobContent';
+import { InsertImageModal } from './InsertImageModal';
 
 interface Props {
   value: string;
@@ -28,6 +29,7 @@ interface Props {
 export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [showTips, setShowTips] = useState(false);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /**
@@ -144,10 +146,7 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
   };
 
   const handleInsertImage = () => {
-    const url = prompt('ছবির সরাসরি ইমেজ লিংক (URL) দিন:');
-    if (url) {
-      wrapSelection(`<p><img src="${url}" alt="Circular Image" /></p>`, '', '');
-    }
+    setImageModalOpen(true);
   };
 
   return (
@@ -350,6 +349,13 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
           </div>
         )}
       </div>
+
+      {/* Direct Image Upload & Google Drive Modal */}
+      <InsertImageModal
+        isOpen={imageModalOpen}
+        onClose={() => setImageModalOpen(false)}
+        onInsertImage={(imgHtml) => wrapSelection('', imgHtml, '')}
+      />
     </div>
   );
 };

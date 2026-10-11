@@ -77,6 +77,11 @@ export async function connectGoogleDrive(): Promise<{ accessToken: string; user:
     };
   } catch (error: any) {
     console.error('Google Drive connection error:', error);
+    if (error?.code === 'auth/unauthorized-domain') {
+      throw new Error(
+        'ডোমেইন অনুমোদিত নয় (auth/unauthorized-domain)। অনুগ্রহ করে Firebase Console -> Authentication -> Settings -> Authorized Domains এ গিয়ে bdjobapply.site যোগ করুন।'
+      );
+    }
     throw error;
   }
 }
@@ -197,7 +202,7 @@ export async function uploadFileToGoogleDrive(
   file: File | Blob,
   fileName: string,
   options?: { makePublic?: boolean; description?: string; folderId?: string }
-): Promise<{ fileId: string; webViewLink: string; webContentLink?: string }> {
+): Promise<{ fileId: string; webViewLink: string; webContentLink?: string; directImageUrl?: string }> {
   const token = getDriveAccessToken();
   if (!token) {
     throw new Error('Google Drive সংযুক্ত নেই। দয়া করে প্রথমে Google Drive কানেক্ট করুন।');
@@ -265,6 +270,92 @@ export async function uploadFileToGoogleDrive(
     fileId,
     webViewLink: fileData.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
     webContentLink: fileData.webContentLink,
+    directImageUrl: getDriveDirectImageUrl(fileId),
+  };
+}
+
+/**
+ * Returns a high-speed direct CDN URL for Google Drive images (usable directly in <img src="...">)
+ */
+export function getDriveDirectImageUrl(fileId: string): string {
+  return `https://lh3.googleusercontent.com/d/${fileId}`;
+}
+
+/**
+ * Finds or creates a designated folder in Google Drive (defaults to "BD Job Circular Images")
+ */
+export async function getOrCreateDriveFolder(folderName: string = 'BD Job Circular Images'): Promise<string> {
+  const token = getDriveAccessToken();
+  if (!token) {
+    throw new Error('Google Drive সংযুক্ত নেই। দয়া করে প্রথমে Google Drive কানেক্ট করুন।');
+  }
+
+  // 1. Search for existing folder
+  const escapedName = folderName.replace(/'/g, "\\'");
+  const searchUrl = new URL('https://www.googleapis.com/drive/v3/files');
+  searchUrl.searchParams.set(
+    'q',
+    `mimeType = 'application/vnd.google-apps.folder' and name = '${escapedName}' and trashed = false`
+  );
+  searchUrl.searchParams.set('fields', 'files(id, name)');
+
+  try {
+    const searchRes = await fetch(searchUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (searchRes.ok) {
+      const data = await searchRes.json();
+      if (data.files && data.files.length > 0) {
+        return data.files[0].id;
+      }
+    }
+  } catch (err) {
+    console.warn('Folder search error:', err);
+  }
+
+  // 2. Folder does not exist, create it
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      description: 'বিডি জব পোর্টালের চাকরির বিজ্ঞপ্তি ইমেজ ও ফাইল',
+    }),
+  });
+
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Google Drive ফোল্ডার তৈরি করা যায়নি');
+  }
+
+  const folderData = await createRes.json();
+  return folderData.id;
+}
+
+/**
+ * Uploads a circular image directly into the designated "BD Job Circular Images" folder
+ */
+export async function uploadJobImageToDrive(
+  file: File | Blob,
+  fileName?: string
+): Promise<{ fileId: string; directImageUrl: string; webViewLink: string }> {
+  const folderId = await getOrCreateDriveFolder('BD Job Circular Images');
+  const safeName = fileName || `circular_img_${Date.now()}.jpg`;
+
+  const uploaded = await uploadFileToGoogleDrive(file, safeName, {
+    makePublic: true,
+    folderId,
+    description: 'বিডি জব পোর্টাল সার্কুলার ইমেজ',
+  });
+
+  return {
+    fileId: uploaded.fileId,
+    directImageUrl: getDriveDirectImageUrl(uploaded.fileId),
+    webViewLink: uploaded.webViewLink,
   };
 }
 
