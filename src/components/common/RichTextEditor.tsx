@@ -15,10 +15,12 @@ import {
   Edit3,
   Sparkles,
   HelpCircle,
+  Loader2,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { formatJobContent } from '../../utils/formatJobContent';
 import { InsertImageModal } from './InsertImageModal';
+import { useToast } from './Toast';
 
 interface Props {
   value: string;
@@ -30,7 +32,9 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [showTips, setShowTips] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [aiFormatting, setAiFormatting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toast = useToast();
 
   /**
    * Wraps selected text in the textarea with before/after tags.
@@ -96,11 +100,42 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
     onChange(nextVal);
   };
 
-  const handleAutoFormat = () => {
-    if (!value) return;
-    const formatted = formatJobContent(value);
-    onChange(formatted);
-    setTab('preview');
+  const handleAutoFormat = async () => {
+    if (!value || !value.trim()) {
+      toast?.info('প্রথমে সার্কুলারের টেক্সট লিখুন বা পেস্ট করুন');
+      return;
+    }
+
+    setAiFormatting(true);
+
+    try {
+      const res = await fetch('/api/ai/format-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: value }),
+      });
+
+      if (!res.ok) {
+        throw new Error('AI ফরম্যাটার অনুপলব্ধ');
+      }
+
+      const data = await res.json();
+      if (data.formattedHtml) {
+        onChange(data.formattedHtml);
+        setTab('preview');
+        toast?.success('✨ Gemini AI নিখুঁতভাবে সার্কুলারটি প্রফেশনাল ফরম্যাটে সাজিয়ে দিয়েছে!');
+        return;
+      }
+    } catch (err: any) {
+      console.warn('AI formatting unavailable, using local formatter:', err);
+      // Fallback to local regex-based smart formatter
+      const localFormatted = formatJobContent(value);
+      onChange(localFormatted);
+      setTab('preview');
+      toast?.info('স্মার্ট ফরম্যাটার দিয়ে সাজানো হয়েছে');
+    } finally {
+      setAiFormatting(false);
+    }
   };
 
   const handleInsertTable = () => {
@@ -313,15 +348,29 @@ export const RichTextEditor: React.FC<Props> = ({ value, onChange, label }) => {
                 <ImageIcon className="w-4 h-4" />
               </button>
 
-              {/* Auto Format Button */}
+              {/* AI Auto Format Button */}
               <button
                 type="button"
                 onClick={handleAutoFormat}
-                className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs ml-auto transition-all cursor-pointer active:scale-95"
-                title="স্বয়ংক্রিয়ভাবে প্যারাগ্রাফ, বুলেট পয়েন্ট ও হেডিং ফরম্যাট করুন"
+                disabled={aiFormatting}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shadow-xs ml-auto transition-all cursor-pointer ${
+                  aiFormatting
+                    ? 'bg-emerald-800 text-emerald-100 cursor-not-allowed opacity-90'
+                    : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white'
+                }`}
+                title="Gemini AI দিয়ে সার্কুলারটি প্রফেশনাল টেবিল, হেডিং ও বুলেট পয়েন্টে সাজান"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
-                <span>✨ অটো ফরম্যাট</span>
+                {aiFormatting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                    <span>Gemini AI সাজাচ্ছে...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
+                    <span>✨ AI অটো ফরম্যাট</span>
+                  </>
+                )}
               </button>
             </div>
 
