@@ -1,21 +1,65 @@
 /**
- * Smart Job Content Formatter & HTML Repair Engine
+ * Smart Job Content Formatter, HTML Repair & Competitor Purge Engine
  *
- * Repairs corrupted HTML (nested <a>, corrupted <img src="<a href="...">">, doubled <p>)
- * and cleanly renders:
- * - Images (HTML <img>, Google Drive lh3 URLs, broken/truncated img tags auto-repaired)
- * - Markdown (# H1, ## H2, ### H3, **bold**, *italic*, - bullets, 1. numbered)
- * - Raw Bengali circular text (auto-detects headings, key-value bolding, bullet points)
- * - HTML tags (<h1>, <h2>, <h3>, <b>, <strong>, <i>, <ul>, <ol>, <table>, <a>, <img>)
+ * Transforms raw Bengali circular text or semi-structured HTML into
+ * an executive, visually attractive, super-premium layout while completely
+ * purging competitor apps, websites, watermarks, and slogans.
  */
 
+/**
+ * Purges competitor app names, competitor websites, watermarks, channels & promos
+ */
+export function purgeCompetitorBranding(text: string): string {
+  if (!text) return '';
+  let cleaned = text;
+
+  // 1. Remove non-official external competitor website URLs:
+  // Preserves: .gov.bd, teletalk.com.bd, bdjobapply.site, googleusercontent.com, googleapis.com
+  cleaned = cleaned.replace(
+    /https?:\/\/(?!(?:[a-zA-Z0-9-]+\.)*(?:gov\.bd|teletalk\.com\.bd|bdjobapply\.site|googleusercontent\.com|googleapis\.com))[a-zA-Z0-9.-]+\.[a-z]{2,}(?:\/[^\s<"']*)?/gi,
+    ''
+  );
+
+  // 2. Line by line purge of competitor promotional text, app notices, watermarks
+  const lines = cleaned.split(/\r?\n/);
+  const filteredLines = lines.filter((line) => {
+    const raw = line.trim();
+    if (!raw) return true;
+
+    // Check for competitor app / promo triggers
+    if (
+      /(?:প্লে\s*স্টোর|play\.google\.com|আমাদের\s*অ্যাপ|অ্যাপটি\s*(?:ডাউনলোড|নামিয়ে|ইন্সটল)|অ্যাপে\s*স্বাগতম|অ্যাপ\s*থেকে|অ্যাপের\s*মাধ্যমে|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|bdjobstoday|chakri\.com|আমাদের\s*ওয়েবসাইট|আমাদের\s*(?:অফিসিয়াল\s*)?ফেসবুক|টেলিগ্রাম\s*(?:গ্রুপ|চ্যানেল)|সবার\s*আগে\s*(?:সকল\s*)?চাকরির)/i.test(
+        raw
+      )
+    ) {
+      return false; // drop competitor line completely!
+    }
+
+    return true;
+  });
+
+  cleaned = filteredLines.join('\n');
+
+  // 3. Remove inline competitor watermarks & empty tags
+  cleaned = cleaned.replace(
+    /(?:bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job)[a-z0-9.-]*\s*(?:app|website|\.com|\.net)?/gi,
+    ''
+  );
+  cleaned = cleaned.replace(/<a\b[^>]*href=["\x27]\s*["\x27][^>]*>([\s\S]*?)<\/a>/gi, '$1');
+  cleaned = cleaned.replace(/<p>\s*(?:&nbsp;|\s)*<\/p>/gi, '');
+
+  return cleaned.trim();
+}
+
+/**
+ * Repairs corrupted HTML (nested <a>, broken <img src="<a href="...">">, doubled <p>)
+ */
 export function repairCorruptedJobHtml(text: string): string {
   if (!text) return '';
 
   let cleaned = text;
 
   // 1. Repair <img src="<a href="URL"...>...</a>" ...>
-  // Caused by regex linkifiers injecting <a> tags inside <img src="...">
   cleaned = cleaned.replace(
     /<img\s+src=["\x27]<a\s+href=["\x27](https?:\/\/[^\s"\x27]+)["\x27][^>]*>[\s\S]*?<\/a>["\x27]/gi,
     '<img src="$1"'
@@ -43,27 +87,38 @@ export function repairCorruptedJobHtml(text: string): string {
   return cleaned;
 }
 
+/**
+ * Transforms circular content into an executive, super-premium layout
+ */
 export function formatJobContent(content: string): string {
   if (!content) return '';
 
-  // Step 1: Run comprehensive HTML repair
-  let text = repairCorruptedJobHtml(content.trim());
+  // Step 1: Purge competitor branding & repair corrupted HTML
+  let text = purgeCompetitorBranding(content.trim());
+  text = repairCorruptedJobHtml(text);
 
-  // Step 2: If the content is ALREADY complete semantic HTML (has <h1>/<h3>/<p> tags)
-  // return it directly without running plain-text line parser!
+  // Step 2: Check if content already contains a semantic <table> or styled structure
   const hasHtmlStructure =
     /<(h[1-6]|table|ul|ol)\b/i.test(text) ||
     (/<p\b/i.test(text) && /<\/p>/i.test(text) && text.split(/<\/(?:p|h[1-6]|ul|ol|table)>/i).length > 2);
 
   if (hasHtmlStructure) {
-    // Only repair inline markdown (bold/italic) and preserve all existing HTML structure
-    text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-    text = text.replace(/__(.*?)__/g, '<b>$1</b>');
+    // Polish existing HTML:
+    // Ensure headings have icons and polish
+    text = text
+      .replace(/<h3>এক নজরে[^<]*<\/h3>/gi, '<h3>📌 এক নজরে নিয়োগ বিজ্ঞপ্তির সারসংক্ষেপ</h3>')
+      .replace(/<h3>পদের বিবরণ[^<]*<\/h3>/gi, '<h3>📋 পদের বিবরণ, পদসংখ্যা ও শিক্ষাগত যোগ্যতা</h3>')
+      .replace(/<h3>গুরুত্বপূর্ণ তারিখ[^<]*<\/h3>/gi, '<h3>⏳ জরুরি তারিখ ও সময়সীমা</h3>')
+      .replace(/<h3>আবেদনের (?:শর্তাবলী|নিয়মাবলী)[^<]*<\/h3>/gi, '<h3>📝 অনলাইনে আবেদন করার নিয়ম ও শর্তাবলি</h3>')
+      .replace(/<h3>টেলিটক এসএমএস[^<]*<\/h3>/gi, '<h3>📲 টেলিটক SMS ও আবেদন ফি জমা দেওয়ার নিয়ম</h3>');
+
+    // Format markdown bold/italic
+    text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/__(.*?)__/g, '<b>$1</b>');
+
     return repairCorruptedJobHtml(text);
   }
 
-  // Step 3: Raw plain-text / Markdown circular parsing
-  // Process inline markdown:
+  // Step 3: Raw plain-text / Markdown circular parsing into executive HTML
   text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   text = text.replace(/__(.*?)__/g, '<b>$1</b>');
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
@@ -99,23 +154,22 @@ export function formatJobContent(content: string): string {
     }
 
     // Standalone image URL on its own line:
-    // e.g. https://lh3.googleusercontent.com/d/1Uu-lpfn4PBFsxVh0FtQpngWRuRZkCXT-
     const isStandaloneImageUrl =
       /^https?:\/\/[^\s<"']+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s<"']*)?$/i.test(rawLine) ||
       /^https:\/\/lh3\.googleusercontent\.com\/d\/[a-zA-Z0-9_-]+$/i.test(rawLine);
     if (isStandaloneImageUrl) {
       closeLists();
       result.push(
-        `<p style="text-align:center; margin:16px 0;"><img src="${rawLine}" alt="চাকরির সার্কুলার ইমেজ" style="max-width:100%; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin:12px auto; display:block;" /></p>`
+        `<p style="text-align:center; margin:20px 0;"><img src="${rawLine}" alt="চাকরির সার্কুলার ইমেজ" style="max-width:100%; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.08); margin:12px auto; display:block;" /></p>`
       );
       continue;
     }
 
-    // Lines containing existing <img> tags: preserve as-is without touching
+    // Lines containing existing <img> tags: preserve
     if (/<img[\s>]/i.test(rawLine)) {
       closeLists();
       if (!rawLine.startsWith('<p')) {
-        result.push(`<p style="text-align:center; margin:16px 0;">${rawLine}</p>`);
+        result.push(`<p style="text-align:center; margin:20px 0;">${rawLine}</p>`);
       } else {
         result.push(rawLine);
       }
@@ -198,12 +252,19 @@ export function formatJobContent(content: string): string {
     const isJobHeading =
       rawLine.endsWith(':') ||
       rawLine.endsWith('ঃ') ||
-      /^(পদের নাম|শিক্ষাগত যোগ্যতা|বয়সসীমা|বয়স সীমা|আবেদনের নিয়ম|আবেদন প্রক্রিয়া|বেতন স্কেল|শর্তাবলী|আবেদনের শেষ তারিখ|প্রয়োজনীয় কাগজপত্র|ফি পরিশোধের নিয়ম|আবেদন সংক্রান্ত সাধারণ তথ্যাবলি)/i.test(
+      /^(এক নজরে|পদের বিবরণ|শিক্ষাগত যোগ্যতা|বয়সসীমা|বয়স সীমা|আবেদনের নিয়ম|আবেদন প্রক্রিয়া|বেতন স্কেল|শর্তাবলী|আবেদনের শেষ তারিখ|প্রয়োজনীয় কাগজপত্র|ফি পরিশোধের নিয়ম|আবেদন সংক্রান্ত সাধারণ তথ্যাবলি)/i.test(
         rawLine
       );
 
     if (isJobHeading && rawLine.length < 90 && !rawLine.startsWith('<p')) {
-      result.push(`<h3>${formatInlineStyles(rawLine)}</h3>`);
+      let icon = '📌';
+      if (/পদের বিবরণ|শিক্ষাগত যোগ্যতা/i.test(rawLine)) icon = '📋';
+      else if (/তারিখ|সময়সীমা/i.test(rawLine)) icon = '⏳';
+      else if (/নিয়ম|শর্তাবলী/i.test(rawLine)) icon = '📝';
+      else if (/টেলিটক|এসএমএস|ফি/i.test(rawLine)) icon = '📲';
+      else if (/সতর্কতা/i.test(rawLine)) icon = '⚠️';
+
+      result.push(`<h3>${icon} ${formatInlineStyles(rawLine)}</h3>`);
       continue;
     }
 
@@ -241,12 +302,7 @@ export function formatJobContent(content: string): string {
  * Format inline text (bolding key: value pairs, URLs, dates)
  */
 function formatInlineStyles(text: string): string {
-  // If line contains key: value (e.g. "শিক্ষাগত যোগ্যতা: এইচএসসি পাশ"), bold the key:
-  let formatted = text.replace(
-    /^([^:\n<]{2,30})[:ঃ]\s*(.+)$/,
-    '<b>$1:</b> $2'
-  );
-
+  let formatted = text.replace(/^([^:\n<]{2,30})[:ঃ]\s*(.+)$/, '<b>$1:</b> $2');
   formatted = formatInlineLinks(formatted);
   return formatted;
 }
@@ -255,7 +311,6 @@ function formatInlineStyles(text: string): string {
  * Turns plain text URLs into clickable links safely without breaking HTML tags or attributes
  */
 function formatInlineLinks(text: string): string {
-  // If the line already has <a or <img, do NOT alter it!
   if (/<a\s|<img\s/i.test(text)) {
     return text;
   }

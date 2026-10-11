@@ -1,4 +1,4 @@
-import { formatJobContent, repairCorruptedJobHtml } from './formatJobContent';
+import { formatJobContent, repairCorruptedJobHtml, purgeCompetitorBranding } from './formatJobContent';
 import { generateSlug } from './slugify';
 import { JobCategory, JobPostItem } from '../types';
 
@@ -57,7 +57,8 @@ function stripAllHtml(html: string): string {
  * under any circumstances (Gemini rate-limits, network latency, or static deployments).
  */
 export function extractJobLocally(rawText: string): ExtractedJobResult {
-  const repairedInput = repairCorruptedJobHtml((rawText || '').trim());
+  const purifiedInput = purgeCompetitorBranding((rawText || '').trim());
+  const repairedInput = repairCorruptedJobHtml(purifiedInput);
   const textWithoutHtml = stripAllHtml(repairedInput);
   const lines = textWithoutHtml.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
@@ -74,13 +75,18 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
     totalCount = parseInt(toEnglishDigits(totalMatch[1]), 10) || 0;
   }
 
-  // 2. EXTRACT TITLE
+  // 2. EXTRACT TITLE (Strictly ignore competitor apps or site names)
   let title = '';
   // Check <h1> tag first if available
   const h1Match = repairedInput.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
   if (h1Match) {
     const rawH1 = stripAllHtml(h1Match[1]).replace(/\s+/g, ' ').trim();
-    if (rawH1.length > 10) {
+    if (
+      rawH1.length > 10 &&
+      !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+        rawH1
+      )
+    ) {
       title = rawH1;
     }
   }
@@ -91,6 +97,9 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
       if (
         /(?:নিয়োগ|বিজ্ঞপ্তি|মন্ত্রণালয়|অধিদপ্তর|পরিদপ্তর|ব্যাংক|কমিশন|বোর্ড|বাহিনী|রেলওয়ে)/i.test(line) &&
         !/^(?:এক নজরে|প্রতিষ্ঠানের নাম|আবেদনের মাধ্যম|অফিসিয়াল|আবেদন শুরুর|আবেদনের শেষ|মূল তথ্য|পদের বিবরণ)/i.test(line) &&
+        !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+          line
+        ) &&
         line.length > 15
       ) {
         title = line.replace(/^[#<>\s*]+/, '').replace(/[:ঃ\s]+$/, '');
@@ -103,7 +112,14 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
   if (!title && orgName) {
     title = `${orgName} নিয়োগ বিজ্ঞপ্তি`;
   } else if (!title && lines.length > 0) {
-    title = lines[0].slice(0, 100);
+    // Pick the first line that is NOT competitor branding
+    const safeLine = lines.find(
+      (l) =>
+        !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+          l
+        )
+    );
+    title = safeLine?.slice(0, 100) || 'সরকারি চাকরির নিয়োগ বিজ্ঞপ্তি';
   } else if (!title) {
     title = 'নতুন সরকারি চাকরির নিয়োগ বিজ্ঞপ্তি';
   }

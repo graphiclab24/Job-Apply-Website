@@ -1,49 +1,63 @@
 @import "tailwindcss";
 
-/* Job Circular Rich Text & Content Styling */
+/* Job Circular Rich Text & Content Styling - Super Premium & Executive Portal Standard */
+.job-content {
+  font-family: inherit;
+  color: #1f2937;
+  font-size: 0.95rem;
+  line-height: 1.85;
+}
+
 .job-content h1 {
-  font-size: 1.5rem;
+  font-size: 1.55rem;
   font-weight: 800;
-  color: #111827;
-  margin-top: 1.5rem;
-  margin-bottom: 0.75rem;
-  line-height: 1.3;
-  border-bottom: 2px solid #e5e7eb;
-  padding-bottom: 0.5rem;
+  color: #064e3b;
+  margin-top: 1.75rem;
+  margin-bottom: 1rem;
+  line-height: 1.35;
+  border-bottom: 2px solid #a7f3d0;
+  padding-bottom: 0.625rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .job-content h2 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #111827;
-  margin-top: 1.25rem;
-  margin-bottom: 0.5rem;
-  line-height: 1.35;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 0.35rem;
+  color: #065f46;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+  background: linear-gradient(to right, #f0fdf4, #ffffff);
+  border-left: 4px solid #059669;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0 0.5rem 0.5rem 0;
 }
 
 .job-content h3 {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: #111827;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  line-height: 1.4;
+  color: #047857;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.45;
+  border-left: 4px solid #10b981;
+  padding-left: 0.75rem;
 }
 
 .job-content h4 {
   font-size: 1rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin-top: 0.75rem;
-  margin-bottom: 0.35rem;
+  font-weight: 700;
+  color: #111827;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .job-content p {
   margin-top: 0.5rem;
   margin-bottom: 0.75rem;
-  line-height: 1.75;
+  line-height: 1.85;
   color: #374151;
 }
 
@@ -56,73 +70,125 @@
 .job-content i,
 .job-content em {
   font-style: italic;
+  color: #4b5563;
 }
 
 .job-content ul {
-  list-style-type: disc !important;
-  padding-left: 1.5rem !important;
-  margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+  list-style-type: none !important;
+  padding-left: 0 !important;
+  margin-top: 0.75rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.job-content ul > li {
+  position: relative;
+  padding-left: 1.6rem;
+  line-height: 1.75;
+  color: #374151;
+}
+
+.job-content ul > li::before {
+  content: "✔";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #059669;
+  font-weight: bold;
+  font-size: 0.85rem;
 }
 
 .job-content ol {
   list-style-type: decimal !important;
-  padding-left: 1.5rem !important;
-  margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+  padding-left: 1.75rem !important;
+  margin-top: 0.75rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
-.job-content li {
-  margin-top: 0.25rem;
-  margin-bottom: 0.25rem;
-  line-height: 1.6;
+.job-content ol > li {
+  line-height: 1.75;
   color: #374151;
+  padding-left: 0.25rem;
 }
 
 .job-content table {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-  border: 1px solid #d1d5db;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 1.25rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.05);
   font-size: 0.875rem;
 }
 
 .job-content th {
-  background-color: #f3f4f6;
+  background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+  color: #ffffff;
   font-weight: 700;
-  color: #111827;
-  border: 1px solid #d1d5db;
-  padding: 0.625rem 0.75rem;
+  padding: 0.75rem 1rem;
   text-align: left;
+  border-bottom: 2px solid #064e3b;
+  letter-spacing: 0.015em;
 }
 
 .job-content td {
-  border: 1px solid #d1d5db;
-  padding: 0.5rem 0.75rem;
-  color: #374151;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f1f5f9;
+  padding: 0.75rem 1rem;
+  color: #334155;
+  background-color: #ffffff;
+}
+
+.job-content tr:last-child td {
+  border-bottom: none;
+}
+
+.job-content tr:nth-child(even) td {
+  background-color: #f8fafc;
+}
+
+.job-content tr:hover td {
+  background-color: #f0fdf4;
 }
 
 .job-content blockquote {
-  border-left: 4px solid #059669;
-  padding-left: 1rem;
-  font-style: italic;
-  color: #4b5563;
-  margin: 1rem 0;
-  background-color: #f0fdf4;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-  border-radius: 0 0.5rem 0.5rem 0;
+  border-left: 4px solid #f59e0b;
+  padding: 0.875rem 1.25rem;
+  margin: 1.25rem 0;
+  background: linear-gradient(to right, #fffbeb, #ffffff);
+  border-radius: 0 0.75rem 0.75rem 0;
+  color: #92400e;
+  font-size: 0.9rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .job-content a {
   color: #047857;
-  text-decoration: underline;
   font-weight: 600;
-  transition: color 0.15s;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: all 0.15s ease-in-out;
 }
 
 .job-content a:hover {
   color: #065f46;
+  text-decoration-thickness: 2px;
 }
 
+.job-content img {
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
+  max-width: 100%;
+  height: auto;
+  margin: 1rem auto;
+  display: block;
+  border: 1px solid #e2e8f0;
+}

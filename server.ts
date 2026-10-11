@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
-import { formatJobContent, repairCorruptedJobHtml } from './src/utils/formatJobContent';
+import { formatJobContent, repairCorruptedJobHtml, purgeCompetitorBranding } from './src/utils/formatJobContent';
 import { extractJobLocally } from './src/utils/localJobExtractor';
 
 dotenv.config();
@@ -45,7 +45,7 @@ async function generateWithGemini(prompt: string, jsonMode: boolean = false): Pr
 /**
  * AI-Powered Professional Job Circular Formatter
  * Takes raw/messy text from newspapers, PDFs, or circulars and transforms it
- * into executive, structured, semantic HTML with tables, headings, and badges.
+ * into an executive, super-premium, highly readable semantic HTML structure.
  */
 app.post('/api/ai/format-job', async (req: Request, res: Response) => {
   try {
@@ -54,41 +54,61 @@ app.post('/api/ai/format-job', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'কনটেন্ট প্রদান করা আবশ্যক' });
     }
 
+    const cleanInputContent = purgeCompetitorBranding(content.trim());
+
     const systemPrompt = `You are a Senior Editor and HTML Specialist for Bangladesh Government & Private Job Portals.
-Your job is to transform raw, messy, or semi-formatted job circular text into clean, high-conversion, executive semantic HTML.
+Your job is to transform raw, messy, or semi-formatted job circular text into an EXECUTIVE, SUPER-PREMIUM, HIGH-CONVERSION HTML LAYOUT.
 
-STRICT INSTRUCTIONS:
-1. PRESERVE ALL ORIGINAL DATA FAITHFULLY:
-   - Do NOT invent, drop, or alter dates, job titles, vacancy numbers, salaries, grades, fees, districts, or educational requirements.
-   - PRESERVE ANY IMAGE TAGS (<img ...>) OR IMAGE URLS EXACTLY AS THEY ARE. DO NOT alter, strip, or corrupt any <img ...> tags!
+CRITICAL INSTRUCTIONS:
+1. TOTAL PURGE OF COMPETITOR WEBSITES, APPS & WATERMARKS:
+   - You MUST COMPLETELY REMOVE and NEVER MENTION any competitor name, competitor website domain, competitor Android/iOS app name, Play Store download links, Facebook page, Telegram link, YouTube channel, or watermark (e.g. "Chakrir Khobor", "Bdjobs", "Alljobs", "Daily Jobs", "চাকরির খবর অ্যাপ", "আমাদের অ্যাপ", "প্লে স্টোর", etc.).
+   - NEVER put the competitor's website or app name at the top or anywhere in the circular!
+   - The title and headings must strictly reflect the OFFICIAL BANGLADESH GOVERNMENT MINISTRY, DEPARTMENT, OR HIRING AUTHORITY.
+   - The ONLY allowed external URLs are official government application portals (e.g., https://*.teletalk.com.bd, *.gov.bd) and user's own site bdjobapply.site.
 
-2. STRUCTURE & SECTIONS:
-   - Use clean, semantic HTML: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <b>, <strong>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <blockquote>.
-   - Divide the circular into clear logical sections with <h3> headings:
-     - <h3>পদের বিবরণ ও শূন্যপদের সংখ্যা:</h3>
-     - <h3>শিক্ষাগত যোগ্যতা ও অভিজ্ঞতা:</h3>
-     - <h3>বেতন স্কেল ও গ্রেড:</h3>
-     - <h3>বয়সসীমা:</h3>
-     - <h3>আবেদনের শর্তাবলী ও নিয়মাবলী:</h3>
-     - <h3>টেলিটক এসএমএস ও ফি পরিশোধের নিয়ম:</h3>
-     - <h3>জরুরি তারিখ ও সময়সীমা:</h3>
-   - If there are multiple positions and qualifications, format them into a clean, responsive HTML <table> with <thead> and <tbody> (columns: পদের নাম, পদসংখ্যা, শিক্ষাগত যোগ্যতা, বেতন স্কেল) OR crisp, well-structured bullet lists.
-   - Bold key labels (e.g., <b>পদের নাম:</b>, <b>পদসংখ্যা:</b>, <b>শিক্ষাগত যোগ্যতা:</b>, <b>বেতন স্কেল:</b>, <b>আবেদনের শেষ তারিখ:</b>).
-   - Use <ol><li> for numbered step-by-step instructions.
-   - Use <ul><li> for general terms and requirements.
-   - Use <blockquote> for critical alerts, quota notices, or special warnings.
+2. EXECUTIVE, SUPER-PREMIUM HTML STRUCTURE:
+   A. [HIGHLIGHTS SUMMARY TABLE]:
+      At the very top, build a sleek two-column <table> with <thead> and <tbody>:
+      <thead><tr><th colspan="2">📌 এক নজরে নিয়োগ বিজ্ঞপ্তির সারসংক্ষেপ</th></tr></thead>
+      <tbody>
+        <tr><td><b>প্রতিষ্ঠানের নাম:</b></td><td>[Official Ministry / Dept]</td></tr>
+        <tr><td><b>মোট পদসংখ্যা:</b></td><td>[Total vacancies e.g. ৪৩টি পদ]</td></tr>
+        <tr><td><b>চাকরির ধরন:</b></td><td>[সরকারি চাকরি / স্বায়ত্তশাসিত / বেসরকারি]</td></tr>
+        <tr><td><b>শিক্ষাগত যোগ্যতা:</b></td><td>[SSC / HSC / Degree / Honors]</td></tr>
+        <tr><td><b>বয়সসীমা:</b></td><td>[১৮ থেকে ৩২ বছর (কোটা অনুসারে)]</td></tr>
+        <tr><td><b>আবেদনের মাধ্যম:</b></td><td>অনলাইন (টেলিটক)</td></tr>
+        <tr><td><b>আবেদনের লিংক:</b></td><td><a href="[official teletalk link]" target="_blank">[domain]</a></td></tr>
+        <tr><td><b>আবেদনের শেষ তারিখ ও সময়:</b></td><td><span style="color:#b91c1c; font-weight:bold;">[End date & time]</span></td></tr>
+      </tbody>
+   B. [POSTS & VACANCIES TABLE]:
+      <h3>📋 পদের বিবরণ, শূন্যপদ ও শিক্ষাগত যোগ্যতা</h3>
+      If multiple positions exist, format into a clean HTML <table>:
+      <thead><tr><th>ক্রমিক</th><th>পদের নাম ও গ্রেড</th><th>পদসংখ্যা</th><th>শিক্ষাগত যোগ্যতা ও অভিজ্ঞতা</th><th>বেতন স্কেল</th></tr></thead>
+      <tbody>...</tbody>
+   C. [APPLICATION GUIDELINES]:
+      <h3>📝 অনলাইনে আবেদন করার নিয়মাবলী ও শর্তাবলি</h3>
+      Structured with <ul><li> points highlighting official requirements, age limits, photo/signature sizes (300x300, 300x80), and quotas.
+   D. [TELETALK SMS INSTRUCTIONS]:
+      <h3>📲 টেলিটক SMS ও আবেদন ফি জমা দেওয়ার নিয়ম</h3>
+      Use <ol><li> for Step 1 (আবেদন ফরম পূরণ) and Step 2 (১ম ও ২য় SMS ফরম্যাট).
+   E. [IMPORTANT DATES]:
+      <h3>⏳ জরুরি তারিখ ও সময়সীমা</h3>
+      <ul>
+        <li><b>আবেদন শুরুর তারিখ ও সময়:</b> [Start date]</li>
+        <li><b>আবেদনের শেষ তারিখ ও সময়:</b> [End date]</li>
+      </ul>
+   F. [IMAGE PRESERVATION]:
+      PRESERVE ANY <img ...> TAGS EXACTLY AS THEY ARE! Center inside <p style="text-align:center; margin:20px 0;"><img ... /></p>.
+   G. [OFFICIAL ALERT]:
+      Use <blockquote> for special official warnings or quota notices.
 
-3. MOBILE-RESPONSIVE & CLEAN BANGLA TYPOGRAPHY:
-   - Ensure clean Bengali phrasing without broken linebreaks or repetitive whitespace.
-   - All external website links should be clean: <a href="..." target="_blank" rel="noopener noreferrer">...</a> (DO NOT touch URLs already inside <img src="...">).
-
-4. OUTPUT FORMAT:
+3. OUTPUT FORMAT:
    - Return ONLY the clean, ready-to-render HTML body snippet.
    - Do NOT wrap in markdown code fences (no \`\`\`html or \`\`\`).
    - Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags.
 
-Raw Circular Text to Format:
-${content.trim()}`;
+Raw Circular Text:
+${cleanInputContent}`;
 
     let formattedHtml = '';
     try {
@@ -97,7 +117,7 @@ ${content.trim()}`;
       formattedHtml = repairCorruptedJobHtml(formattedHtml);
     } catch (aiErr: any) {
       console.warn('Gemini format-job transient notice, fallback to smart formatter:', aiErr?.message);
-      formattedHtml = repairCorruptedJobHtml(formatJobContent(content));
+      formattedHtml = repairCorruptedJobHtml(formatJobContent(cleanInputContent));
     }
 
     res.json({ formattedHtml });
@@ -220,41 +240,50 @@ app.post('/api/ai/extract-job', async (req: Request, res: Response) => {
       sourceText = String(rawText).trim();
     }
 
+    // Purge competitor app names, sites and watermarks from the source text immediately
+    sourceText = purgeCompetitorBranding(sourceText);
+
     if (!sourceText || sourceText.length < 30) {
       return res.status(400).json({ error: 'পর্যাপ্ত সার্কুলার তথ্য পাওয়া যায়নি' });
     }
 
     const extractionPrompt = `You are an elite SEO Strategist and Senior Job Editor for Bangladesh Employment Portals (bdjobapply.site).
-A competitor website or user provided the following raw job circular text:
+A raw job circular text is provided:
 
 --- SOURCE TEXT ---
 ${sourceText}
 --- END SOURCE TEXT ---
 
 Your goal:
-Analyze this notice and generate a COMPLETE, FACTUAL, HIGH-CONVERTING, PREMIUM JOB CIRCULAR that WILL OUTRANK THE COMPETITOR ON GOOGLE SEARCH.
+Analyze this notice and generate a COMPLETE, FACTUAL, HIGH-CONVERTING, SUPER-PREMIUM EXECUTIVE JOB CIRCULAR that WILL OUTRANK ALL COMPETITORS ON GOOGLE SEARCH.
 
-CRITICAL SEO & OUTRANKING DIRECTIVES:
-1. NEVER COPY COMPETITOR SENTENCES VERBATIM:
-   - Re-synthesize the circular in an authoritative, structured, and official Bengali tone.
-   - Strictly preserve all factual numbers, dates, deadlines, qualifications, post counts, and official Teletalk URLs.
+CRITICAL DIRECTIVES:
+1. STRICT ZERO-COMPETITOR POLICY:
+   - ABSOLUTELY PURGE all competitor website names, apps, domains, watermarks, channels, or social promos (e.g. "Chakrir Khobor", "Bdjobs", "Alljobs", "Daily Jobs", competitor app links).
+   - The "title" MUST NEVER contain competitor app or website names! The title MUST start with the official Government Ministry / Department / Organization name (e.g. "যুব ও ক্রীড়া মন্ত্রণালয়ে ক্রীড়া পরিদপ্তরে ৪৩ পদে বিশাল নিয়োগ বিজ্ঞপ্তি ২০২৬").
+   - Replace any brand references with "BD Job Apply" or the official government hiring authority.
 
-2. STRUCTURED POSTS & HTML CONTENT:
-   - "content": Must be executive, mobile-friendly semantic HTML with clean <h3> headings, bullet lists, bold labels, and if multiple posts exist, format them into a clean <table> with <thead> and <tbody> (columns: পদের নাম, পদসংখ্যা, শিক্ষাগত যোগ্যতা, বেতন স্কেল).
-   - "posts": Extract each post into array of objects: [{ name: "string", count: number, district: "ALL" }].
+2. EXECUTIVE, SUPER-PREMIUM HTML CONTENT ("content" field):
+   - "content" MUST NOT be plain or basic! It must be an executive, modern HTML presentation:
+     A. At the top of "content": A sleek summary <table> with <thead> (<tr><th colspan="2">📌 এক নজরে নিয়োগ বিজ্ঞপ্তির সারসংক্ষেপ</th></tr>) and <tbody> key-value rows (প্রতিষ্ঠানের নাম, মোট পদসংখ্যা, চাকরির ধরন, শিক্ষাগত যোগ্যতা, বয়সসীমা, আবেদনের মাধ্যম, আবেদনের লিংক, আবেদনের শেষ তারিখ ও সময়).
+     B. <h3>📋 পদের বিবরণ ও শিক্ষাগত যোগ্যতা</h3> with an HTML <table> (columns: ক্রমিক, পদের নাম, পদসংখ্যা, শিক্ষাগত যোগ্যতা, বেতন স্কেল).
+     C. <h3>📝 অনলাইনে আবেদন করার নিয়মাবলী ও শর্তাবলি</h3> with clean <ul><li> guidelines.
+     D. <h3>📲 টেলিটক SMS ও আবেদন ফি জমা দেওয়ার নিয়ম</h3> with step-by-step <ol><li>.
+     E. <h3>⏳ জরুরি তারিখ ও সময়সীমা</h3> with start & deadline dates.
+     F. If source text contains an <img ...> tag, PRESERVE IT and center it in <p style="text-align:center; margin:20px 0;"><img ... /></p>.
 
 3. HIGH-CTR SEO METADATA:
-   - "title": Highly clickable, comprehensive title (e.g. "যুব ও ক্রীড়া মন্ত্রণালয়ে ক্রীড়া পরিদপ্তরে ৪৩ পদে বিশাল নিয়োগ বিজ্ঞপ্তি ২০২৬").
+   - "title": Highly clickable, official title starting with Ministry / Dept name (e.g. "যুব ও ক্রীড়া মন্ত্রণালয়ে ক্রীড়া পরিদপ্তরে ৪৩ পদে বিশাল নিয়োগ বিজ্ঞপ্তি ২০২৬").
    - "seoTitle": High-CTR SEO title ending with "| BDJobApply.site" (max 65 chars).
    - "slug": Clean, hyphenated Bengali or English SEO slug (e.g. "krira-poridoptor-job-circular-2026").
-   - "metaDescription": 145-160 characters. Must begin with the primary keyword, include total post count, qualifications, deadline, and Teletalk online application details.
+   - "metaDescription": 145-160 characters. Begins with primary keyword, includes vacancy count, qualifications, deadline, and Teletalk online application details.
    - "focusKeyword": The single highest-volume Google search query for this job (e.g. "ক্রীড়া পরিদপ্তর নিয়োগ বিজ্ঞপ্তি ২০২৬").
-   - "tags": Array of 8 to 12 relevant search tags (covering organization name in Bengali and English, Teletalk subdomain e.g. "ds.teletalk.com.bd", "সরকারি চাকরি", "টেলিটক সার্কুলার").
+   - "tags": Array of 8 to 12 relevant search tags (organization name in Bengali and English, Teletalk subdomain e.g. "ds.teletalk.com.bd", "সরকারি চাকরি", "টেলিটক সার্কুলার"). NEVER include competitor names.
 
 4. DATES, FEES & LINKS:
    - "category": One of "govt", "bank", "private", "railway", "defense", "education", "other".
    - "deadline": ISO format "YYYY-MM-DDTHH:mm" (e.g. "2026-10-30T16:00"). If time not given, use "23:59".
-   - "applyLink": Official application URL (e.g. "http://ds.teletalk.com.bd").
+   - "applyLink": Official application URL (e.g. "https://ds.teletalk.com.bd").
    - "circularLink": Official PDF link if found, else empty string.
    - "applicationFee": Number (e.g. 100, 200, 223, 334, 500). If not found, 0.
    - "serviceCharge": 20 (standard).
@@ -265,7 +294,7 @@ RESPOND IN PURE JSON (no markdown fences, no \`\`\`json):
   "slug": "string",
   "category": "govt",
   "deadline": "2026-10-30T16:00",
-  "applyLink": "http://ds.teletalk.com.bd",
+  "applyLink": "https://ds.teletalk.com.bd",
   "applicationFee": 200,
   "serviceCharge": 20,
   "circularLink": "",
@@ -283,9 +312,17 @@ RESPOND IN PURE JSON (no markdown fences, no \`\`\`json):
 
       const parsedData = JSON.parse(rawJson);
 
-      // Sanitize content HTML
+      // Sanitize fields against competitor watermarks and corruptions
+      if (parsedData.title) {
+        parsedData.title = purgeCompetitorBranding(parsedData.title);
+      }
       if (parsedData.content) {
-        parsedData.content = repairCorruptedJobHtml(parsedData.content);
+        parsedData.content = repairCorruptedJobHtml(purgeCompetitorBranding(parsedData.content));
+      }
+      if (Array.isArray(parsedData.tags)) {
+        parsedData.tags = parsedData.tags
+          .map((t: string) => purgeCompetitorBranding(t).trim())
+          .filter((t: string) => t.length > 1 && !/(?:bdjobs|chakrir|alljobs)/i.test(t));
       }
 
       return res.json(parsedData);
