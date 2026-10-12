@@ -8,7 +8,7 @@ import { useToast } from '../../components/common/Toast';
 import { Spinner } from '../../components/common/Spinner';
 
 export const AdminLoginPage: React.FC = () => {
-  const [email, setEmail] = useState('habiblinkage@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);

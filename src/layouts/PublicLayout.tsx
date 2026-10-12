@@ -190,7 +190,6 @@ export const PublicLayout: React.FC = () => {
                 <li><Link to="/jobs" className="hover:text-emerald-400">সকল চাকরির খবর</Link></li>
                 <li><Link to="/login" className="hover:text-emerald-400">ইউজার লগইন</Link></li>
                 <li><Link to="/register" className="hover:text-emerald-400">নতুন অ্যাকাউন্ট তৈরি</Link></li>
-                <li><Link to="/admin/login" className="hover:text-emerald-400">অ্যাডমিন প্রবেশদ্বার</Link></li>
               </ul>
             </div>
 
