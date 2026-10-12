@@ -28,7 +28,7 @@ export function purgeCompetitorBranding(text: string): string {
 
     // Check for competitor app / promo triggers
     if (
-      /(?:প্লে\s*স্টোর|play\.google\.com|আমাদের\s*অ্যাপ|অ্যাপটি\s*(?:ডাউনলোড|নামিয়ে|ইন্সটল)|অ্যাপে\s*স্বাগতম|অ্যাপ\s*থেকে|অ্যাপের\s*মাধ্যমে|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|bdjobstoday|chakri\.com|আমাদের\s*ওয়েবসাইট|আমাদের\s*(?:অফিসিয়াল\s*)?ফেসবুক|টেলিগ্রাম\s*(?:গ্রুপ|চ্যানেল)|সবার\s*আগে\s*(?:সকল\s*)?চাকরির)/i.test(
+      /(?:jobs?\s*exam\s*al[a-z]*t|job\s*alert|exam\s*alert|জব(?:স)?\s*(?:এক্সাম|পরীক্ষা|পরিক্ষা)\s*(?:অ্যালার্ট|এলার্ট|এল্যার্ট)|চাকরি(?:র)?\s*(?:পরীক্ষা|পরিক্ষা|এক্সাম)\s*(?:এলার্ট|অ্যালার্ট)|android\s*app|প্লে\s*স্টোর|play\.google\.com|আমাদের\s*অ্যাপ|অ্যাপটি\s*(?:ডাউনলোড|নামিয়ে|ইন্সটল)|অ্যাপে\s*স্বাগতম|অ্যাপ\s*থেকে|অ্যাপের\s*মাধ্যমে|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|bdjobstoday|chakri\.com|আমাদের\s*ওয়েবসাইট|আমাদের\s*(?:অফিসিয়াল\s*)?ফেসবুক|টেলিগ্রাম\s*(?:গ্রুপ|চ্যানেল)|সবার\s*আগে\s*(?:সকল\s*)?চাকরির)/i.test(
         raw
       )
     ) {
@@ -40,11 +40,24 @@ export function purgeCompetitorBranding(text: string): string {
 
   cleaned = filteredLines.join('\n');
 
-  // 3. Remove inline competitor watermarks & empty tags
-  cleaned = cleaned.replace(
-    /(?:bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job)[a-z0-9.-]*\s*(?:app|website|\.com|\.net)?/gi,
-    ''
-  );
+  // 3. Remove inline competitor watermarks, app mentions & empty tags
+  const inlinePurgePatterns = [
+    /\bandroid\s*app\s*[:\s-]*[^\n<,.]*(?:jobs?\s*exam\s*al[a-z]*t|al[a-z]*t)[^\n<,.]*/gi,
+    /\bjobs?\s*exam\s*al[a-z]*t\b[a-z0-9.-]*/gi,
+    /\bjob\s*alert\b/gi,
+    /\bexam\s*alert\b/gi,
+    /জব(?:স)?\s*(?:এক্সাম|পরীক্ষা|পরিক্ষা)\s*(?:অ্যালার্ট|এলার্ট|এল্যার্ট|অ্যালার্টটি|এলার্টটি)/gi,
+    /চাকরি(?:র)?\s*(?:পরীক্ষা|পরিক্ষা|এক্সাম)\s*(?:অ্যালার্ট|এলার্ট)/gi,
+    /\b(?:bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job)[a-z0-9.-]*\s*(?:app|website|\.com|\.net)?/gi,
+    /\bandroid\s*app\b/gi,
+    /অ্যাপটি\s*ডাউনলোড\s*করুন/gi,
+    /প্লে\s*স্টোর\s*থেকে/gi,
+  ];
+
+  for (const pat of inlinePurgePatterns) {
+    cleaned = cleaned.replace(pat, '');
+  }
+
   cleaned = cleaned.replace(/<a\b[^>]*href=["\x27]\s*["\x27][^>]*>([\s\S]*?)<\/a>/gi, '$1');
   cleaned = cleaned.replace(/<p>\s*(?:&nbsp;|\s)*<\/p>/gi, '');
 

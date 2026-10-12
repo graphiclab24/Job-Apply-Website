@@ -61,8 +61,9 @@ Your job is to transform raw, messy, or semi-formatted job circular text into an
 
 CRITICAL INSTRUCTIONS:
 1. TOTAL PURGE OF COMPETITOR WEBSITES, APPS & WATERMARKS:
-   - You MUST COMPLETELY REMOVE and NEVER MENTION any competitor name, competitor website domain, competitor Android/iOS app name, Play Store download links, Facebook page, Telegram link, YouTube channel, or watermark (e.g. "Chakrir Khobor", "Bdjobs", "Alljobs", "Daily Jobs", "চাকরির খবর অ্যাপ", "আমাদের অ্যাপ", "প্লে স্টোর", etc.).
-   - NEVER put the competitor's website or app name at the top or anywhere in the circular!
+   - STRICT COMPETITOR BLACKLIST: You MUST COMPLETELY REMOVE and NEVER MENTION "Jobs Exam Alert", "Job Exam Alert", "জব এক্সাম এলার্ট", "জবস এক্সাম এলার্ট", "চাকরির পরীক্ষার এলার্ট", or ANY Android/iOS app marketing (e.g. "Android App: Jobs Exam Alert", "Download Jobs Exam Alert", "Android App", "Play Store").
+   - You MUST COMPLETELY REMOVE any competitor website domain, competitor Android/iOS app name, Play Store download links, Facebook page, Telegram link, YouTube channel, or watermark (e.g. "Jobs Exam Alert", "Chakrir Khobor", "Bdjobs", "Alljobs", "Daily Jobs", "চাকরির খবর অ্যাপ", "আমাদের অ্যাপ", "প্লে স্টোর", etc.).
+   - NEVER put "Jobs Exam Alert" or any competitor's website or app name at the top or anywhere in the circular!
    - The title and headings must strictly reflect the OFFICIAL BANGLADESH GOVERNMENT MINISTRY, DEPARTMENT, OR HIRING AUTHORITY.
    - The ONLY allowed external URLs are official government application portals (e.g., https://*.teletalk.com.bd, *.gov.bd) and user's own site bdjobapply.site.
 
@@ -259,7 +260,7 @@ Analyze this notice and generate a COMPLETE, FACTUAL, HIGH-CONVERTING, SUPER-PRE
 
 CRITICAL DIRECTIVES:
 1. STRICT ZERO-COMPETITOR POLICY:
-   - ABSOLUTELY PURGE all competitor website names, apps, domains, watermarks, channels, or social promos (e.g. "Chakrir Khobor", "Bdjobs", "Alljobs", "Daily Jobs", competitor app links).
+   - ABSOLUTE COMPETITOR BLACKLIST: You MUST COMPLETELY PURGE and NEVER MENTION "Jobs Exam Alert", "Job Exam Alert", "জব এক্সাম এলার্ট", "জবস এক্সাম এলার্ট", "চাকরির পরীক্ষার এলার্ট", "Bdjobs", "Chakrir Khobor", "Alljobs", "Daily Jobs", or ANY Android/iOS app promotion (e.g. "Android App: Jobs Exam Alert", "Download App", "Play Store").
    - The "title" MUST NEVER contain competitor app or website names! The title MUST start with the official Government Ministry / Department / Organization name (e.g. "যুব ও ক্রীড়া মন্ত্রণালয়ে ক্রীড়া পরিদপ্তরে ৪৩ পদে বিশাল নিয়োগ বিজ্ঞপ্তি ২০২৬").
    - Replace any brand references with "BD Job Apply" or the official government hiring authority.
 
@@ -316,19 +317,41 @@ RESPOND IN PURE JSON (no markdown fences, no \`\`\`json):
       if (parsedData.title) {
         parsedData.title = purgeCompetitorBranding(parsedData.title);
       }
+      if (parsedData.slug) {
+        parsedData.slug = purgeCompetitorBranding(parsedData.slug)
+          .replace(/(?:jobs?[-_]?exam[-_]?al[a-z]*t|bdjobs|chakrir[-_]?khobor)/gi, '')
+          .replace(/--+/g, '-')
+          .replace(/^-|-$/g, '');
+      }
       if (parsedData.content) {
         parsedData.content = repairCorruptedJobHtml(purgeCompetitorBranding(parsedData.content));
+      }
+      if (parsedData.seoTitle) {
+        parsedData.seoTitle = purgeCompetitorBranding(parsedData.seoTitle);
+      }
+      if (parsedData.metaDescription) {
+        parsedData.metaDescription = purgeCompetitorBranding(parsedData.metaDescription);
+      }
+      if (parsedData.focusKeyword) {
+        parsedData.focusKeyword = purgeCompetitorBranding(parsedData.focusKeyword);
       }
       if (Array.isArray(parsedData.tags)) {
         parsedData.tags = parsedData.tags
           .map((t: string) => purgeCompetitorBranding(t).trim())
-          .filter((t: string) => t.length > 1 && !/(?:bdjobs|chakrir|alljobs)/i.test(t));
+          .filter((t: string) => t.length > 1 && !/(?:bdjobs|chakrir|alljobs|jobs?\s*exam|al[a-z]*t)/i.test(t));
       }
 
       return res.json(parsedData);
     } catch (aiErr: any) {
       console.warn('Gemini extraction notice, falling back to instant local smart extractor:', aiErr?.message);
       const fallbackData = extractJobLocally(sourceText);
+      if (fallbackData.title) fallbackData.title = purgeCompetitorBranding(fallbackData.title);
+      if (fallbackData.content) fallbackData.content = repairCorruptedJobHtml(purgeCompetitorBranding(fallbackData.content));
+      if (Array.isArray(fallbackData.tags)) {
+        fallbackData.tags = fallbackData.tags
+          .map((t: string) => purgeCompetitorBranding(t).trim())
+          .filter((t: string) => t.length > 1 && !/(?:bdjobs|chakrir|alljobs|jobs?\s*exam|al[a-z]*t)/i.test(t));
+      }
       return res.json(fallbackData);
     }
   } catch (err: any) {

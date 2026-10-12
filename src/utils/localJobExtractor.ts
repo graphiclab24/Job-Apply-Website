@@ -83,7 +83,7 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
     const rawH1 = stripAllHtml(h1Match[1]).replace(/\s+/g, ' ').trim();
     if (
       rawH1.length > 10 &&
-      !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+      !/(?:jobs?\s*exam\s*al[a-z]*t|job\s*alert|exam\s*alert|জব(?:স)?\s*(?:এক্সাম|পরীক্ষা)|android\s*app|প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
         rawH1
       )
     ) {
@@ -97,7 +97,7 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
       if (
         /(?:নিয়োগ|বিজ্ঞপ্তি|মন্ত্রণালয়|অধিদপ্তর|পরিদপ্তর|ব্যাংক|কমিশন|বোর্ড|বাহিনী|রেলওয়ে)/i.test(line) &&
         !/^(?:এক নজরে|প্রতিষ্ঠানের নাম|আবেদনের মাধ্যম|অফিসিয়াল|আবেদন শুরুর|আবেদনের শেষ|মূল তথ্য|পদের বিবরণ)/i.test(line) &&
-        !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+        !/(?:jobs?\s*exam\s*al[a-z]*t|job\s*alert|exam\s*alert|জব(?:স)?\s*(?:এক্সাম|পরীক্ষা)|android\s*app|প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
           line
         ) &&
         line.length > 15
@@ -115,7 +115,7 @@ export function extractJobLocally(rawText: string): ExtractedJobResult {
     // Pick the first line that is NOT competitor branding
     const safeLine = lines.find(
       (l) =>
-        !/(?:প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
+        !/(?:jobs?\s*exam\s*al[a-z]*t|job\s*alert|exam\s*alert|জব(?:স)?\s*(?:এক্সাম|পরীক্ষা)|android\s*app|প্লে\s*স্টোর|অ্যাপ|app|bdjobs|alljobs|chakrir\s*khobor|daily\s*job|career\s*bangladesh|priyo\s*job|আমাদের\s*ওয়েবসাইট)/i.test(
           l
         )
     );
