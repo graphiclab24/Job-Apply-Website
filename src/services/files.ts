@@ -141,16 +141,52 @@ export async function readPdfAsDataUrl(file: File): Promise<{ dataUrl: string; s
 }
 
 /**
- * Browser image resize & compress utility using HTML5 Canvas
- * Produces base64 dataURL respecting maxWidth, maxHeight, and maxSizeBytes
+ * Checks browser capability and returns the most advanced supported image format
+ * Priority: AVIF -> WebP -> JPEG
+ */
+export function getOptimalMimeType(): 'image/avif' | 'image/webp' | 'image/jpeg' {
+  if (typeof document === 'undefined') return 'image/jpeg';
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    if (canvas.toDataURL('image/avif').startsWith('data:image/avif')) {
+      return 'image/avif';
+    }
+    if (canvas.toDataURL('image/webp').startsWith('data:image/webp')) {
+      return 'image/webp';
+    }
+  } catch {}
+  return 'image/jpeg';
+}
+
+/**
+ * Detects whether the client browser supports HTML5 Canvas WebP export.
+ * Defaults to 'image/webp' for 30-40% smaller file sizes, crisper fonts, and instant mobile loading.
+ */
+export function getBestSmartImageMimeType(): 'image/webp' | 'image/jpeg' {
+  try {
+    if (typeof document !== 'undefined') {
+      const elem = document.createElement('canvas');
+      if (elem.toDataURL('image/webp').indexOf('data:image/webp') === 0) {
+        return 'image/webp';
+      }
+    }
+  } catch {}
+  return 'image/jpeg';
+}
+
+/**
+ * Browser image resize & compress utility using HTML5 Canvas.
+ * Produces ultra-compact WebP/AVIF base64 dataURL respecting maxWidth, maxHeight, and maxSizeBytes.
  */
 export async function compressImageToDataUrl(
   file: File,
   maxWidth: number,
   maxHeight: number,
   maxSizeBytes: number,
-  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/jpeg'
-): Promise<{ dataUrl: string; sizeBytes: number }> {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif' = getBestSmartImageMimeType()
+): Promise<{ dataUrl: string; sizeBytes: number; format: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
@@ -180,7 +216,7 @@ export async function compressImageToDataUrl(
         return;
       }
 
-      // Draw with white background for JPEG
+      // Draw with white background for JPEG / WebP transparency fallback
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
@@ -190,15 +226,15 @@ export async function compressImageToDataUrl(
       let dataUrl = canvas.toDataURL(mimeType, quality);
       let byteLength = estimateDataUrlBytes(dataUrl);
 
-      while (byteLength > maxSizeBytes && quality > 0.1) {
+      while (byteLength > maxSizeBytes && quality > 0.15) {
         quality -= 0.1;
         dataUrl = canvas.toDataURL(mimeType, quality);
         byteLength = estimateDataUrlBytes(dataUrl);
       }
 
-      // If still over limit (e.g. strict 60KB/100KB with huge detail), downscale dimensions
+      // If still over limit, downscale dimensions
       if (byteLength > maxSizeBytes) {
-        let scale = 0.8;
+        let scale = 0.85;
         while (byteLength > maxSizeBytes && scale >= 0.4) {
           const scaledW = Math.round(width * scale);
           const scaledH = Math.round(height * scale);
@@ -207,9 +243,9 @@ export async function compressImageToDataUrl(
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, scaledW, scaledH);
           ctx.drawImage(img, 0, 0, scaledW, scaledH);
-          dataUrl = canvas.toDataURL(mimeType, 0.7);
+          dataUrl = canvas.toDataURL(mimeType, 0.75);
           byteLength = estimateDataUrlBytes(dataUrl);
-          scale -= 0.2;
+          scale -= 0.15;
         }
       }
 
@@ -221,6 +257,7 @@ export async function compressImageToDataUrl(
       resolve({
         dataUrl,
         sizeBytes: byteLength,
+        format: mimeType,
       });
     };
 

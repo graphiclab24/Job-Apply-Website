@@ -12,7 +12,7 @@ import {
   DocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { getCached, setCached, precacheJob, getCachedWithSWR } from '../../services/cache';
+import { getCached, setCached, precacheJob, getCachedWithSWR, prefetchJobDetail } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -67,6 +67,13 @@ export const JobsPage: React.FC = () => {
             setCached('jobs_page_1', data.jobs);
           }
           data.jobs.forEach(precacheJob);
+          // Speculatively prefetch full circular details of top jobs during idle time
+          if (typeof window !== 'undefined') {
+            const idle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1000));
+            idle(() => {
+              data.jobs.slice(0, 4).forEach((j: any) => prefetchJobDetail(j.slug || j.id));
+            });
+          }
           setLoading(false);
           return;
         }
@@ -263,8 +270,14 @@ export const JobsPage: React.FC = () => {
                 key={job.id}
                 to={`/jobs/${job.slug || job.id}`}
                 state={{ preloadedJob: job }}
-                onMouseEnter={() => precacheJob(job)}
-                onTouchStart={() => precacheJob(job)}
+                onMouseEnter={() => {
+                  precacheJob(job);
+                  prefetchJobDetail(job.slug || job.id);
+                }}
+                onTouchStart={() => {
+                  precacheJob(job);
+                  prefetchJobDetail(job.slug || job.id);
+                }}
                 className="bg-white rounded-xl border border-gray-200 p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
               >
                 <div>

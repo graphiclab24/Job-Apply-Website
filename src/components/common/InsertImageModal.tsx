@@ -21,7 +21,7 @@ import {
   getDriveDirectImageUrl,
   DriveFileItem,
 } from '../../services/googleDrive';
-import { compressImageToDataUrl } from '../../services/files';
+import { compressImageToDataUrl, getBestSmartImageMimeType } from '../../services/files';
 import { Button } from './Button';
 import { Spinner } from './Spinner';
 
@@ -168,13 +168,14 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
           const res = await uploadJobImageToDrive(item.file, item.file.name);
           finalImgUrl = res.directImageUrl;
         } else {
-          // Compress to clean lightweight WebP/JPEG data URL (<150KB)
+          // Compress to clean lightweight WebP data URL (<150KB)
+          const smartMime = getBestSmartImageMimeType();
           const compressed = await compressImageToDataUrl(
             item.file,
-            1200,
-            1600,
+            1400,
+            1800,
             150 * 1024,
-            'image/jpeg'
+            smartMime
           );
           finalImgUrl = compressed.dataUrl;
         }
@@ -192,7 +193,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
               uploadedUrls.length > 1
                 ? `<p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ ${img.label} ]</p>`
                 : '';
-            return `<div style="text-align:center; margin:20px 0;"><img src="${img.url}" alt="${altText} - ${img.label}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${pageCaption}</div>`;
+            return `<div style="text-align:center; margin:20px 0;"><img src="${img.url}" alt="${altText} - ${img.label}" loading="lazy" decoding="async" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${pageCaption}</div>`;
           })
           .join('\n');
       } else {
@@ -200,7 +201,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
         const gridItems = uploadedUrls
           .map(
             (img) =>
-              `<div style="flex:1 1 45%; min-width:280px; text-align:center;"><img src="${img.url}" alt="${altText} - ${img.label}" style="width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); display:block;" /><p style="font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ ${img.label} ]</p></div>`
+              `<div style="flex:1 1 45%; min-width:280px; text-align:center;"><img src="${img.url}" alt="${altText} - ${img.label}" loading="lazy" decoding="async" style="width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); display:block;" /><p style="font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ ${img.label} ]</p></div>`
           )
           .join('\n');
         htmlOutput = `<div style="display:flex; flex-wrap:wrap; gap:16px; margin:20px 0; justify-content:center;">${gridItems}</div>`;
@@ -233,7 +234,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
           selectedItems.length > 1
             ? `<p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ পাতা ${idx + 1} ]</p>`
             : '';
-        return `<div style="text-align:center; margin:20px 0;"><img src="${directUrl}" alt="${f.name || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${caption}</div>`;
+        return `<div style="text-align:center; margin:20px 0;"><img src="${directUrl}" alt="${f.name || 'Circular Image'}" loading="lazy" decoding="async" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${caption}</div>`;
       })
       .join('\n');
 
@@ -246,7 +247,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
       setErrorMsg('ছবির লিংক লিখুন');
       return;
     }
-    const imgTag = `<div style="text-align:center; margin:20px 0;"><img src="${imageUrlInput.trim()}" alt="${altText || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" /></div>`;
+    const imgTag = `<div style="text-align:center; margin:20px 0;"><img src="${imageUrlInput.trim()}" alt="${altText || 'Circular Image'}" loading="lazy" decoding="async" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" /></div>`;
     onInsertImage(imgTag);
     onClose();
   };

@@ -10,9 +10,14 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../services/firebase';
-import { googleProvider, setDriveAccessToken } from '../services/googleDrive';
+import { setDriveAccessToken } from '../services/googleDrive';
 import { mobileToEmail, emailToMobile, isValidMobile, isValidPassword } from '../utils/auth';
 import { UserRole } from '../types';
+
+// Standard Google Auth Provider for regular user sign-in:
+// Pure authentication ONLY (email, profile). ZERO Google Drive scopes to eliminate "Contact developer" / "App unverified" blocks!
+const cleanUserGoogleProvider = new GoogleAuthProvider();
+cleanUserGoogleProvider.setCustomParameters({ prompt: 'select_account' });
 
 interface AuthContextType {
   user: User | null;
@@ -156,42 +161,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const loginUser = async (userMobile: string, pass: string) => {
+  const loginUser = async (identifier: string, pass: string) => {
     clearError();
-    if (!isValidMobile(userMobile)) {
-      throw new Error('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)');
+    const cleanId = (identifier || '').trim();
+    if (!cleanId) {
+      throw new Error('অনুগ্রহ করে মোবাইল নম্বর বা ইমেইল ঠিকানা দিন');
     }
     if (!isValidPassword(pass)) {
       throw new Error('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে');
     }
 
-    const email = mobileToEmail(userMobile);
+    let email: string;
+    if (cleanId.includes('@')) {
+      email = cleanId.toLowerCase();
+    } else {
+      if (!isValidMobile(cleanId)) {
+        throw new Error('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX) অথবা সঠিক ইমেইল লিখুন');
+      }
+      email = mobileToEmail(cleanId);
+    }
+
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
-        throw new Error('মোবাইল নম্বর বা পাসওয়ার্ড সঠিক নয়');
+        throw new Error('মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড সঠিক নয়');
       }
       throw new Error(err.message || 'লগইন ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
     }
   };
 
-  const registerUser = async (userMobile: string, pass: string) => {
+  const registerUser = async (identifier: string, pass: string) => {
     clearError();
-    if (!isValidMobile(userMobile)) {
-      throw new Error('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)');
+    const cleanId = (identifier || '').trim();
+    if (!cleanId) {
+      throw new Error('অনুগ্রহ করে মোবাইল নম্বর বা ইমেইল ঠিকানা দিন');
     }
     if (!isValidPassword(pass)) {
       throw new Error('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে');
     }
 
-    const email = mobileToEmail(userMobile);
+    let email: string;
+    let userMobile = '';
+    if (cleanId.includes('@')) {
+      email = cleanId.toLowerCase();
+    } else {
+      if (!isValidMobile(cleanId)) {
+        throw new Error('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX) অথবা সঠিক ইমেইল লিখুন');
+      }
+      email = mobileToEmail(cleanId);
+      userMobile = cleanId;
+    }
+
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       const userRef = doc(db, 'users', cred.user.uid);
       try {
         await setDoc(userRef, {
-          mobile: userMobile.trim(),
+          mobile: userMobile,
+          email: email,
           role: 'user',
           createdAt: serverTimestamp(),
         });
@@ -200,7 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
-        throw new Error('এই মোবাইল নম্বর দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।');
+        throw new Error('এই মোবাইল নম্বর বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।');
       }
       throw new Error(err.message || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
     }
@@ -299,15 +327,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     clearError();
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setDriveAccessToken(credential.accessToken, {
-          email: result.user.email,
-          name: result.user.displayName,
-          photoURL: result.user.photoURL,
-        });
-      }
+      // Use clean standard Google Auth Provider (ZERO Drive scopes = instant login, no developer verification warning)
+      const result = await signInWithPopup(auth, cleanUserGoogleProvider);
 
       const isOwner = isOwnerEmail(result.user.email);
       if (isOwner) {

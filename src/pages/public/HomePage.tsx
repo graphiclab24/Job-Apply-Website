@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getFeedLatest, FeedJobSummary } from '../../services/feed';
-import { getCached, setCached, precacheJob } from '../../services/cache';
+import { getCached, setCached, precacheJob, prefetchJobDetail } from '../../services/cache';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
@@ -43,6 +43,14 @@ export const HomePage: React.FC = () => {
         if (isMounted && feedPosts && feedPosts.length > 0) {
           setJobs(feedPosts);
           feedPosts.forEach(precacheJob);
+
+          // Speculatively prefetch full circular details of top jobs during idle time
+          if (typeof window !== 'undefined') {
+            const idle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1000));
+            idle(() => {
+              feedPosts.slice(0, 4).forEach((j) => prefetchJobDetail(j.slug || j.id));
+            });
+          }
         }
       })
       .catch(() => {})
@@ -231,8 +239,14 @@ export const HomePage: React.FC = () => {
                   key={job.id}
                   to={`/jobs/${job.slug || job.id}`}
                   state={{ preloadedJob: job }}
-                  onMouseEnter={() => precacheJob(job)}
-                  onTouchStart={() => precacheJob(job)}
+                  onMouseEnter={() => {
+                    precacheJob(job);
+                    prefetchJobDetail(job.slug || job.id);
+                  }}
+                  onTouchStart={() => {
+                    precacheJob(job);
+                    prefetchJobDetail(job.slug || job.id);
+                  }}
                   className="bg-white rounded-xl border border-gray-200 p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>

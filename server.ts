@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import compression from 'compression';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -13,6 +14,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '15mb' }));
+app.use(compression());
 
 // Global server-side in-memory cache: Serves millions of visitors with 0 Firestore reads in ~2ms
 let serverFeedCache: { data: any[]; timestamp: number } | null = null;

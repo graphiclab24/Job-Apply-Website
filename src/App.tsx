@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './context/AuthContext';
@@ -6,112 +6,126 @@ import { ToastProvider } from './components/common/Toast';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AdminRoute } from './components/auth/AdminRoute';
+import { ScrollToTop } from './components/common/ScrollToTop';
 
 // Layouts
 import { PublicLayout } from './layouts/PublicLayout';
 import { UserLayout } from './layouts/UserLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 
-// Public Pages
+// Core Public Pages (Eagerly loaded for bulletproof instant mobile landing & 0ms navigation)
 import { HomePage } from './pages/public/HomePage';
 import { JobsPage } from './pages/public/JobsPage';
 import { JobDetailsPage } from './pages/public/JobDetailsPage';
 import { LoginPage } from './pages/public/LoginPage';
 import { RegisterPage } from './pages/public/RegisterPage';
-import { NotFoundPage } from './pages/public/NotFoundPage';
-import { SitemapView } from './pages/public/SitemapView';
-import { RobotsView } from './pages/public/RobotsView';
 
-// User Pages
-import { UserDashboardPage } from './pages/user/UserDashboardPage';
-import { UserCVPage } from './pages/user/UserCVPage';
-import { UserApplicationsPage } from './pages/user/UserApplicationsPage';
-import { UserNotificationsPage } from './pages/user/UserNotificationsPage';
-import { ApplyJobPage } from './pages/user/ApplyJobPage';
-import { ApplicationPaymentPage } from './pages/user/ApplicationPaymentPage';
+// Lazy Loaded Auxiliary Public Pages
+const NotFoundPage = lazy(() => import('./pages/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const SitemapView = lazy(() => import('./pages/public/SitemapView').then((m) => ({ default: m.SitemapView })));
+const RobotsView = lazy(() => import('./pages/public/RobotsView').then((m) => ({ default: m.RobotsView })));
 
-// Admin Pages
-import { AdminLoginPage } from './pages/admin/AdminLoginPage';
-import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
-import { AdminJobsListPage } from './pages/admin/AdminJobsListPage';
-import { AdminJobFormPage } from './pages/admin/AdminJobFormPage';
-import { AdminExamsPage } from './pages/admin/AdminExamsPage';
-import { AdminApplicationsPage } from './pages/admin/AdminApplicationsPage';
-import { AdminPaymentSettingsPage } from './pages/admin/AdminPaymentSettingsPage';
-import { AdminExportPage } from './pages/admin/AdminExportPage';
-import { AdminGoogleDrivePage } from './pages/admin/AdminGoogleDrivePage';
+// Lazy Loaded User Pages
+const UserDashboardPage = lazy(() => import('./pages/user/UserDashboardPage').then((m) => ({ default: m.UserDashboardPage })));
+const UserCVPage = lazy(() => import('./pages/user/UserCVPage').then((m) => ({ default: m.UserCVPage })));
+const UserApplicationsPage = lazy(() => import('./pages/user/UserApplicationsPage').then((m) => ({ default: m.UserApplicationsPage })));
+const UserNotificationsPage = lazy(() => import('./pages/user/UserNotificationsPage').then((m) => ({ default: m.UserNotificationsPage })));
+const ApplyJobPage = lazy(() => import('./pages/user/ApplyJobPage').then((m) => ({ default: m.ApplyJobPage })));
+const ApplicationPaymentPage = lazy(() => import('./pages/user/ApplicationPaymentPage').then((m) => ({ default: m.ApplicationPaymentPage })));
+
+// Lazy Loaded Admin Pages (Heavy editors, Google Drive, and tables isolated from public visitors)
+const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })));
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })));
+const AdminJobsListPage = lazy(() => import('./pages/admin/AdminJobsListPage').then((m) => ({ default: m.AdminJobsListPage })));
+const AdminJobFormPage = lazy(() => import('./pages/admin/AdminJobFormPage').then((m) => ({ default: m.AdminJobFormPage })));
+const AdminExamsPage = lazy(() => import('./pages/admin/AdminExamsPage').then((m) => ({ default: m.AdminExamsPage })));
+const AdminApplicationsPage = lazy(() => import('./pages/admin/AdminApplicationsPage').then((m) => ({ default: m.AdminApplicationsPage })));
+const AdminPaymentSettingsPage = lazy(() => import('./pages/admin/AdminPaymentSettingsPage').then((m) => ({ default: m.AdminPaymentSettingsPage })));
+const AdminExportPage = lazy(() => import('./pages/admin/AdminExportPage').then((m) => ({ default: m.AdminExportPage })));
+const AdminGoogleDrivePage = lazy(() => import('./pages/admin/AdminGoogleDrivePage').then((m) => ({ default: m.AdminGoogleDrivePage })));
+
+// Lightweight Fast Skeleton Fallback
+const PageLoadingFallback: React.FC = () => (
+  <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3">
+    <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+    <span className="text-xs text-gray-500 font-medium">লোড হচ্ছে...</span>
+  </div>
+);
 
 export default function App() {
   return (
     <HelmetProvider>
       <ErrorBoundary>
         <BrowserRouter basename={import.meta.env.BASE_URL}>
+          <ScrollToTop />
           <AuthProvider>
             <ToastProvider>
-              <Routes>
-              {/* Public Routes */}
-              <Route element={<PublicLayout />}>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/jobs" element={<JobsPage />} />
-                <Route path="/jobs/:slug" element={<JobDetailsPage />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-              </Route>
+              <Suspense fallback={<PageLoadingFallback />}>
+                <Routes>
+                  {/* Public Routes */}
+                  <Route element={<PublicLayout />}>
+                    <Route path="/" element={<HomePage />} />
+                    <Route path="/jobs" element={<JobsPage />} />
+                    <Route path="/jobs/:slug" element={<JobDetailsPage />} />
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                  </Route>
 
-              {/* SEO Endpoints (Raw XML / Robots / Google Verification) */}
-              <Route path="/sitemap.xml" element={<SitemapView />} />
-              <Route path="/robots.txt" element={<RobotsView />} />
-              <Route
-                path="/googlec771a2a1a147ff4a.html"
-                element={<pre style={{ margin: 0, padding: '20px' }}>google-site-verification: googlec771a2a1a147ff4a.html</pre>}
-              />
+                  {/* SEO Endpoints (Raw XML / Robots / Google Verification) */}
+                  <Route path="/sitemap.xml" element={<SitemapView />} />
+                  <Route path="/robots.txt" element={<RobotsView />} />
+                  <Route
+                    path="/googlec771a2a1a147ff4a.html"
+                    element={<pre style={{ margin: 0, padding: '20px' }}>google-site-verification: googlec771a2a1a147ff4a.html</pre>}
+                  />
 
-              {/* Admin Login (Isolated) */}
-              <Route path="/admin/login" element={<AdminLoginPage />} />
+                  {/* Admin Login (Isolated) */}
+                  <Route path="/admin/login" element={<AdminLoginPage />} />
 
-              {/* Protected User Routes */}
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <UserLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route path="/dashboard" element={<UserDashboardPage />} />
-                <Route path="/cv" element={<UserCVPage />} />
-                <Route path="/apply/:jobId" element={<ApplyJobPage />} />
-                <Route path="/apply/:jobId/payment" element={<ApplicationPaymentPage />} />
-                <Route path="/applications/:status" element={<UserApplicationsPage />} />
-                <Route path="/notifications" element={<UserNotificationsPage />} />
-              </Route>
+                  {/* Protected User Routes */}
+                  <Route
+                    element={
+                      <ProtectedRoute>
+                        <UserLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route path="/dashboard" element={<UserDashboardPage />} />
+                    <Route path="/cv" element={<UserCVPage />} />
+                    <Route path="/apply/:jobId" element={<ApplyJobPage />} />
+                    <Route path="/apply/:jobId/payment" element={<ApplicationPaymentPage />} />
+                    <Route path="/applications/:status" element={<UserApplicationsPage />} />
+                    <Route path="/notifications" element={<UserNotificationsPage />} />
+                  </Route>
 
-              {/* Protected Admin Routes */}
-              <Route
-                path="/admin"
-                element={
-                  <AdminRoute>
-                    <AdminLayout />
-                  </AdminRoute>
-                }
-              >
-                <Route index element={<AdminDashboardPage />} />
-                <Route path="jobs" element={<AdminJobsListPage />} />
-                <Route path="jobs/new" element={<AdminJobFormPage />} />
-                <Route path="jobs/edit/:id" element={<AdminJobFormPage />} />
-                <Route path="exams" element={<AdminExamsPage />} />
-                <Route path="applications/:step" element={<AdminApplicationsPage />} />
-                <Route path="settings/payment" element={<AdminPaymentSettingsPage />} />
-                <Route path="storage" element={<AdminGoogleDrivePage />} />
-                <Route path="export" element={<AdminExportPage />} />
-              </Route>
+                  {/* Protected Admin Routes */}
+                  <Route
+                    path="/admin"
+                    element={
+                      <AdminRoute>
+                        <AdminLayout />
+                      </AdminRoute>
+                    }
+                  >
+                    <Route index element={<AdminDashboardPage />} />
+                    <Route path="jobs" element={<AdminJobsListPage />} />
+                    <Route path="jobs/new" element={<AdminJobFormPage />} />
+                    <Route path="jobs/edit/:id" element={<AdminJobFormPage />} />
+                    <Route path="exams" element={<AdminExamsPage />} />
+                    <Route path="applications/:step" element={<AdminApplicationsPage />} />
+                    <Route path="settings/payment" element={<AdminPaymentSettingsPage />} />
+                    <Route path="storage" element={<AdminGoogleDrivePage />} />
+                    <Route path="export" element={<AdminExportPage />} />
+                  </Route>
 
-              {/* 404 Route */}
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
-          </ToastProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
-  </HelmetProvider>
-);
+                  {/* 404 Route */}
+                  <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+              </Suspense>
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </ErrorBoundary>
+    </HelmetProvider>
+  );
 }

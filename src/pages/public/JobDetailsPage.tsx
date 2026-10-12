@@ -197,11 +197,24 @@ export const JobDetailsPage: React.FC = () => {
   }
 
   const now = new Date();
-  const deadlineDate = job.deadline
-    ? job.deadline.toDate
-      ? job.deadline.toDate()
-      : new Date(job.deadline)
-    : null;
+
+  // Bulletproof date parser to prevent RangeError: Invalid time value
+  const parseSafeDate = (d: any): Date | null => {
+    if (!d) return null;
+    try {
+      if (typeof d.toDate === 'function') {
+        const res = d.toDate();
+        return res instanceof Date && !isNaN(res.getTime()) ? res : null;
+      }
+      const res = new Date(d);
+      return res instanceof Date && !isNaN(res.getTime()) ? res : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const deadlineDate = parseSafeDate(job.deadline);
+  const publishedDate = parseSafeDate(job.publishedAt);
 
   const isExpired = deadlineDate ? deadlineDate.getTime() < now.getTime() : false;
   const circularLink = job.circularLink || job.circularFile;
@@ -231,7 +244,7 @@ export const JobDetailsPage: React.FC = () => {
     circularImagesList[0] ||
     `${baseDomain}/og-image.jpg`;
 
-  // Google JobPosting & BreadcrumbList JSON-LD Schemas
+  // Google JobPosting & BreadcrumbList JSON-LD Schemas (Safely stringified)
   const structuredData = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -241,11 +254,7 @@ export const JobDetailsPage: React.FC = () => {
         title: job.title,
         description: metaDescription,
         url: canonicalUrl,
-        datePosted: job.publishedAt?.toDate
-          ? job.publishedAt.toDate().toISOString()
-          : typeof job.publishedAt === 'string'
-          ? job.publishedAt
-          : new Date().toISOString(),
+        datePosted: publishedDate ? publishedDate.toISOString() : new Date().toISOString(),
         validThrough: deadlineDate ? deadlineDate.toISOString() : undefined,
         employmentType: 'FULL_TIME',
         hiringOrganization: {
@@ -289,6 +298,8 @@ export const JobDetailsPage: React.FC = () => {
   };
 
   const handleApplyClick = () => {
+    // Scroll directly to the top instantly so users see the login/apply screen immediately
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     if (!user) {
       navigate('/login', { state: { from: `/apply/${job.id}` } });
     } else {
@@ -385,6 +396,7 @@ export const JobDetailsPage: React.FC = () => {
               src={coverDataUrl}
               alt={job.title}
               loading="lazy"
+              decoding="async"
               className="w-full max-h-96 object-cover"
             />
           </div>
@@ -518,6 +530,7 @@ export const JobDetailsPage: React.FC = () => {
                     src={circularImagesList[selectedImageIndex] || circularImagesList[0]}
                     alt={`${job.title} - পাতা ${selectedImageIndex + 1}`}
                     loading="lazy"
+                    decoding="async"
                     className="w-full max-h-[85vh] object-contain mx-auto cursor-zoom-in"
                     onClick={() => {
                       setLightboxImage(circularImagesList[selectedImageIndex] || circularImagesList[0]);
@@ -578,6 +591,7 @@ export const JobDetailsPage: React.FC = () => {
                         src={imgUrl}
                         alt={`${job.title} - পাতা ${idx + 1}`}
                         loading="lazy"
+                        decoding="async"
                         className="w-full max-h-[85vh] object-contain mx-auto cursor-zoom-in"
                         onClick={() => {
                           setLightboxImage(imgUrl);

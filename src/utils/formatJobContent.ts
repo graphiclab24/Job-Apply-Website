@@ -97,6 +97,9 @@ export function repairCorruptedJobHtml(text: string): string {
   // 4. Repair doubled/nested <p><p ...>
   cleaned = cleaned.replace(/<p>\s*<p\b([^>]*)>/gi, '<p$1>').replace(/<\/p>\s*<\/p>/gi, '</p>');
 
+  // 5. Ensure all <img> tags have loading="lazy" decoding="async"
+  cleaned = cleaned.replace(/<img(?![^>]*loading=)([^>]*?)>/gi, '<img loading="lazy" decoding="async"$1>');
+
   return cleaned;
 }
 

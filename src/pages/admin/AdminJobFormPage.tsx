@@ -7,6 +7,7 @@ import {
   getFile,
   getFileId,
   compressImageToDataUrl,
+  getBestSmartImageMimeType,
   FILE_LIMITS,
 } from '../../services/files';
 import { syncJobToFeed } from '../../services/feed';
@@ -268,13 +269,14 @@ export const AdminJobFormPage: React.FC = () => {
 
     setCoverUploading(true);
     try {
-      // Auto compress to <=100KB JPEG
+      // Auto compress to smart WebP (<=100KB)
+      const smartMime = getBestSmartImageMimeType();
       const compressed = await compressImageToDataUrl(
         file,
-        800,
-        500,
+        900,
+        600,
         FILE_LIMITS.COVER,
-        'image/jpeg'
+        smartMime
       );
 
       if (compressed.sizeBytes > FILE_LIMITS.COVER) {
@@ -285,14 +287,14 @@ export const AdminJobFormPage: React.FC = () => {
         id: getFileId.cover(jobId),
         ownerUid: user?.uid || 'admin',
         kind: 'cover',
-        mime: 'image/jpeg',
+        mime: smartMime,
         sizeBytes: compressed.sizeBytes,
         data: compressed.dataUrl,
       });
 
       setHasCover(true);
       setCoverPreview(compressed.dataUrl);
-      success('কভার ইমেজ সফলভাবে সেভ হয়েছে (১০০ KB-এর নিচে)');
+      success('কভার ইমেজ সফলভাবে WebP ফরম্যাটে সেভ হয়েছে (১০০ KB-এর নিচে)');
     } catch (err: any) {
       error(err.message || 'কভার ইমেজ আপলোড ব্যর্থ হয়েছে');
     } finally {
@@ -311,6 +313,7 @@ export const AdminJobFormPage: React.FC = () => {
     const newImageUrls: string[] = [];
 
     try {
+      const smartMime = getBestSmartImageMimeType();
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         setMultiUploadProgress(`ছবি (${i + 1}/${files.length}) প্রসেস ও আপলোড হচ্ছে...`);
@@ -322,14 +325,14 @@ export const AdminJobFormPage: React.FC = () => {
           );
           newImageUrls.push(res.directImageUrl);
         } else {
-          // Compress into lightweight WebP/JPEG dataUrl (<150KB)
-          const comp = await compressImageToDataUrl(file, 1200, 1600, 150 * 1024, 'image/jpeg');
+          // Compress into ultra-crisp lightweight WebP (<180KB)
+          const comp = await compressImageToDataUrl(file, 1400, 1900, 180 * 1024, smartMime);
           newImageUrls.push(comp.dataUrl);
         }
       }
 
       setCircularImages((prev) => [...prev, ...newImageUrls]);
-      success(`✨ এক সাথে ${files.length}টি ছবি বিজ্ঞপ্তিতে যুক্ত হয়েছে!`);
+      success(`✨ এক সাথে ${files.length}টি ছবি WebP ফরম্যাটে যুক্ত হয়েছে!`);
     } catch (err: any) {
       error(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
     } finally {
@@ -347,7 +350,7 @@ export const AdminJobFormPage: React.FC = () => {
     const htmlSnippets = circularImages
       .map((url, idx) => {
         return `<div style="text-align:center; margin:20px 0;">
-  <img src="${url}" alt="${title || 'নিয়োগ বিজ্ঞপ্তি'} - পাতা ${idx + 1}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />
+  <img src="${url}" alt="${title || 'নিয়োগ বিজ্ঞপ্তি'} - পাতা ${idx + 1}" loading="lazy" decoding="async" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />
   <p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ পাতা ${idx + 1} ]</p>
 </div>`;
       })

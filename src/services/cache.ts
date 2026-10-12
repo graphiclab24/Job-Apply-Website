@@ -158,6 +158,48 @@ export function precacheJob(job: any): void {
   }
 }
 
+const inFlightPrefetches = new Set<string>();
+
+/**
+ * Speculatively prefetches the FULL job circular (including HTML content,
+ * circular images, application fee, and posts table) into memory and localStorage.
+ * Triggered on link hover (desktop) or touch start (mobile), or idle background preloading.
+ * Result: Job details page opens in 0ms with zero loading delay!
+ */
+export async function prefetchJobDetail(slugOrId: string): Promise<void> {
+  if (!slugOrId) return;
+  const cacheKey = `job_detail_${slugOrId}`;
+  const existing = getCached<any>(cacheKey);
+  // If already loaded with full content, skip network request
+  if (existing && existing.content && existing.content.length > 50) {
+    return;
+  }
+  if (inFlightPrefetches.has(slugOrId)) return;
+  inFlightPrefetches.add(slugOrId);
+
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(slugOrId)}`);
+    if (res.ok) {
+      const fullJob = await res.json();
+      if (fullJob && fullJob.title) {
+        setCached(`job_detail_${slugOrId}`, fullJob);
+        if (fullJob.slug) setCached(`job_detail_${fullJob.slug}`, fullJob);
+        if (fullJob.id) setCached(`job_detail_${fullJob.id}`, fullJob);
+
+        // Speculatively preload the image in browser asset cache
+        if (fullJob.featuredImage && typeof window !== 'undefined') {
+          const img = new Image();
+          img.src = fullJob.featuredImage;
+        }
+      }
+    }
+  } catch {
+    // Speculative failure is non-fatal
+  } finally {
+    inFlightPrefetches.delete(slugOrId);
+  }
+}
+
 /**
  * Searches all cached lists (feed_latest, jobs_page_*, admin_jobs) to find
  * a job by slug or ID instantly in 0ms!

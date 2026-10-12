@@ -9,7 +9,7 @@ import { useToast } from '../../components/common/Toast';
 import { Spinner } from '../../components/common/Spinner';
 
 export const LoginPage: React.FC = () => {
-  const [mobile, setMobile] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -19,7 +19,12 @@ export const LoginPage: React.FC = () => {
   const location = useLocation();
   const { success } = useToast();
 
-  const from = (location.state as any)?.from?.pathname || (role === 'admin' ? '/admin' : '/dashboard');
+  const from = (location.state as any)?.from?.pathname || (location.state as any)?.from || (role === 'admin' ? '/admin' : '/dashboard');
+
+  // Always instantly scroll to top on open
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -55,7 +60,7 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      await loginUser(mobile, password);
+      await loginUser(identifier, password);
       success('সফলভাবে লগইন হয়েছে!');
       navigate(from, { replace: true });
     } catch (err: any) {
@@ -66,7 +71,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[80vh] flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
         <div className="text-center mb-6">
           <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-3">
@@ -74,7 +79,7 @@ export const LoginPage: React.FC = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-900">ইউজার লগইন</h2>
           <p className="text-xs text-gray-500 mt-1">
-            আপনার নিবন্ধিত মোবাইল নম্বর ও পাসওয়ার্ড দিয়ে প্রবেশ করুন
+            আপনার নিবন্ধিত মোবাইল নম্বর বা ইমেইল ও পাসওয়ার্ড দিয়ে প্রবেশ করুন
           </p>
         </div>
 
@@ -84,16 +89,31 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
+        {/* 1-Click Google Sign In at Top */}
+        <div className="mb-5">
+          <GoogleSignInButton
+            onClick={handleGoogleLogin}
+            loading={googleLoading}
+            text="Google দিয়ে ১-ক্লিকে লগইন"
+            className="w-full"
+          />
+        </div>
+
+        <div className="mb-5 flex items-center justify-between gap-2">
+          <div className="flex-1 border-t border-gray-200" />
+          <span className="text-[11px] text-gray-400 font-medium">অথবা পাসওয়ার্ড দিয়ে</span>
+          <div className="flex-1 border-t border-gray-200" />
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="মোবাইল নম্বর"
-            type="tel"
-            placeholder="017XXXXXXXX"
-            value={mobile}
-            onChange={(e) => setMobile(e.target.value)}
+            label="মোবাইল নম্বর বা ইমেইল"
+            type="text"
+            placeholder="017XXXXXXXX অথবা your@email.com"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             requiredStar
-            helperText="১১ ডিজিটের বাংলাদেশি মোবাইল নম্বর"
-            maxLength={11}
+            helperText="১১ ডিজিটের মোবাইল নম্বর অথবা ইমেইল ঠিকানা"
             disabled={loading}
           />
 
@@ -116,21 +136,6 @@ export const LoginPage: React.FC = () => {
             লগইন করুন
           </Button>
         </form>
-
-        <div className="mt-4 flex items-center justify-between gap-2">
-          <div className="flex-1 border-t border-gray-200" />
-          <span className="text-[11px] text-gray-400 font-medium">অথবা</span>
-          <div className="flex-1 border-t border-gray-200" />
-        </div>
-
-        <div className="mt-4">
-          <GoogleSignInButton
-            onClick={handleGoogleLogin}
-            loading={googleLoading}
-            text="Google দিয়ে প্রবেশ করুন"
-            className="w-full"
-          />
-        </div>
 
         <div className="mt-6 pt-5 border-t border-gray-100 text-center">
           <p className="text-xs text-gray-600">

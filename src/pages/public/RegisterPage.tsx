@@ -4,25 +4,39 @@ import { UserPlus, ArrowRight, ShieldCheck, KeyRound, Smartphone, RotateCcw, Arr
 import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { GoogleSignInButton } from '../../components/common/GoogleSignInButton';
 import { useToast } from '../../components/common/Toast';
 import { Spinner } from '../../components/common/Spinner';
 import { sendRegistrationOtp, verifyRegistrationOtp, normalizeMobile } from '../../services/smsService';
 
+/**
+ * Toggle for SMS OTP during registration.
+ * Default: false (Disabled per user request for friction-free registration).
+ * Can be switched to true in the future whenever SMS OTP verification is needed.
+ */
+const ENABLE_SMS_OTP = false;
+
 export const RegisterPage: React.FC = () => {
   const [step, setStep] = useState<'form' | 'otp'>('form');
-  const [mobile, setMobile] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [localError, setLocalError] = useState('');
-  const [countdown, setCountdown] = useState(180); // 3 minutes
+  const [countdown, setCountdown] = useState(180);
   const [canResend, setCanResend] = useState(false);
 
-  const { registerUser, user, role, loading: authLoading } = useAuth();
+  const { registerUser, loginWithGoogle, user, role, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { success } = useToast();
+
+  // Instant scroll to top on mount
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -30,10 +44,10 @@ export const RegisterPage: React.FC = () => {
     }
   }, [user, role, authLoading, navigate]);
 
-  // Countdown timer for OTP expiry
+  // Countdown timer for OTP expiry (if OTP enabled)
   useEffect(() => {
     let timer: any = null;
-    if (step === 'otp' && countdown > 0) {
+    if (ENABLE_SMS_OTP && step === 'otp' && countdown > 0) {
       timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -41,7 +55,7 @@ export const RegisterPage: React.FC = () => {
             return 0;
           }
           if (prev <= 150) {
-            setCanResend(true); // Allow resend after 30 seconds
+            setCanResend(true);
           }
           return prev - 1;
         });
@@ -66,15 +80,38 @@ export const RegisterPage: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Step 1: Send OTP via SMS Gateway
-  const handleRequestOtp = async (e: React.FormEvent) => {
+  // Google 1-Click Registration / Login
+  const handleGoogleRegister = async () => {
+    setLocalError('');
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+      success('Google অ্যাকাউন্ট দিয়ে সফলভাবে নিবন্ধন ও লগইন সম্পন্ন হয়েছে!');
+      navigate('/dashboard', { replace: true });
+    } catch (err: any) {
+      setLocalError(err.message || 'Google দিয়ে নিবন্ধন ব্যর্থ হয়েছে');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  // Standard Form Submission (Direct or via OTP)
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
 
-    const clean = normalizeMobile(mobile);
-    if (!/^01[3-9]\d{8}$/.test(clean)) {
-      setLocalError('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)');
+    const cleanId = identifier.trim();
+    if (!cleanId) {
+      setLocalError('অনুগ্রহ করে মোবাইল নম্বর বা ইমেইল ঠিকানা দিন');
       return;
+    }
+
+    if (!cleanId.includes('@')) {
+      const cleanMob = normalizeMobile(cleanId);
+      if (!/^01[3-9]\d{8}$/.test(cleanMob)) {
+        setLocalError('অনুগ্রহ করে সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX) অথবা ইমেইল লিখুন');
+        return;
+      }
     }
 
     if (!password || password.length < 6) {
@@ -88,13 +125,30 @@ export const RegisterPage: React.FC = () => {
     }
 
     setLoading(true);
+
+    // If SMS OTP is turned OFF (Current default per user instruction)
+    if (!ENABLE_SMS_OTP) {
+      try {
+        await registerUser(cleanId, password);
+        success('অভিনন্দন! আপনার অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে।');
+        navigate('/dashboard', { replace: true });
+      } catch (err: any) {
+        setLocalError(err.message || 'অ্যাকাউন্ট তৈরি করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // If SMS OTP is turned ON (Future activation workflow)
     try {
-      await sendRegistrationOtp(clean);
+      const cleanMob = normalizeMobile(cleanId);
+      await sendRegistrationOtp(cleanMob);
       setStep('otp');
       setCountdown(180);
       setCanResend(false);
       setOtpCode('');
-      success(`আপনার ${clean} নম্বরে ৪ ডিজিটের ভেরিফিকেশন কোড পাঠানো হয়েছে।`);
+      success(`আপনার ${cleanMob} নম্বরে ৪ ডিজিটের ভেরিফিকেশন কোড পাঠানো হয়েছে।`);
     } catch (err: any) {
       setLocalError(err.message || 'ভেরিফিকেশন কোড পাঠাতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
     } finally {
@@ -102,13 +156,13 @@ export const RegisterPage: React.FC = () => {
     }
   };
 
-  // Step 2: Resend OTP
+  // Resend OTP (if OTP enabled)
   const handleResendOtp = async () => {
     if (!canResend || resending) return;
     setLocalError('');
     setResending(true);
     try {
-      await sendRegistrationOtp(mobile);
+      await sendRegistrationOtp(identifier);
       setCountdown(180);
       setCanResend(false);
       success('নতুন ভেরিফিকেশন কোড পাঠানো হয়েছে!');
@@ -119,7 +173,7 @@ export const RegisterPage: React.FC = () => {
     }
   };
 
-  // Step 3: Verify OTP & Complete Registration
+  // Verify OTP & Complete Registration (if OTP enabled)
   const handleVerifyAndRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
@@ -132,12 +186,8 @@ export const RegisterPage: React.FC = () => {
 
     setLoading(true);
     try {
-      // 1. Verify OTP in Firestore otps collection
-      await verifyRegistrationOtp(mobile, cleanOtp);
-
-      // 2. Register user account in Firebase Auth
-      await registerUser(mobile, password);
-
+      await verifyRegistrationOtp(identifier, cleanOtp);
+      await registerUser(identifier, password);
       success('নম্বর ভেরিফিকেশন সফল! আপনার অ্যাকাউন্ট তৈরি সম্পন্ন হয়েছে।');
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
@@ -148,7 +198,7 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[85vh] flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
         {step === 'form' ? (
           <>
@@ -158,7 +208,7 @@ export const RegisterPage: React.FC = () => {
               </div>
               <h2 className="text-xl font-bold text-gray-900">নতুন অ্যাকাউন্ট তৈরি</h2>
               <p className="text-xs text-gray-500 mt-1">
-                চাকরির সহজে আবেদন ও সিভি সংরক্ষণের জন্য রেজিস্ট্রেশন করুন
+                চাকরির দ্রুত আবেদন ও সিভি সংরক্ষণের জন্য নিবন্ধন করুন
               </p>
             </div>
 
@@ -168,16 +218,31 @@ export const RegisterPage: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleRequestOtp} className="space-y-4">
+            {/* 1-Click Google Sign Up */}
+            <div className="mb-5">
+              <GoogleSignInButton
+                onClick={handleGoogleRegister}
+                loading={googleLoading}
+                text="Google দিয়ে ১-ক্লিকে একাউন্ট খুলুন"
+                className="w-full"
+              />
+            </div>
+
+            <div className="mb-5 flex items-center justify-between gap-2">
+              <div className="flex-1 border-t border-gray-200" />
+              <span className="text-[11px] text-gray-400 font-medium">অথবা তথ্য পূরণ করুন</span>
+              <div className="flex-1 border-t border-gray-200" />
+            </div>
+
+            <form onSubmit={handleFormSubmit} className="space-y-4">
               <Input
-                label="মোবাইল নম্বর"
-                type="tel"
-                placeholder="01XXXXXXXXX"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
+                label="মোবাইল নম্বর বা ইমেইল"
+                type="text"
+                placeholder="01XXXXXXXXX অথবা your@email.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 requiredStar
-                helperText="১১ ডিজিটের সচল মোবাইল নম্বর (এই নম্বরে SMS OTP যাবে)"
-                maxLength={11}
+                helperText="১১ ডিজিটের সচল মোবাইল নম্বর অথবা ইমেইল ঠিকানা"
                 disabled={loading}
               />
 
@@ -201,25 +266,18 @@ export const RegisterPage: React.FC = () => {
                 disabled={loading}
               />
 
-              <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-lg flex items-start gap-2 text-[11px] text-emerald-800">
-                <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
-                <span>
-                  আপনার নম্বরে একটি ৪ ডিজিটের ফ্রি SMS কোড পাঠানো হবে। শুধুমাত্র অ্যাকাউন্ট তৈরির সময়ই একবার ভেরিফাই করতে হবে।
-                </span>
-              </div>
-
               <Button
                 type="submit"
                 className="w-full"
                 loading={loading}
                 icon={<ArrowRight className="w-4 h-4" />}
               >
-                OTP কোড পাঠান ও এগিয়ে যান
+                {ENABLE_SMS_OTP ? 'OTP কোড পাঠান ও এগিয়ে যান' : 'অ্যাকাউন্ট তৈরি করুন'}
               </Button>
             </form>
           </>
         ) : (
-          /* Step 2: OTP Verification */
+          /* Step 2: OTP Verification (Activated when ENABLE_SMS_OTP is true) */
           <>
             <div className="text-center mb-6">
               <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-xs">
@@ -228,7 +286,7 @@ export const RegisterPage: React.FC = () => {
               <h2 className="text-xl font-bold text-gray-900">মোবাইল নম্বর ভেরিফিকেশন</h2>
               <p className="text-xs text-gray-600 mt-1.5 flex items-center justify-center gap-1">
                 <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{mobile} নম্বরে ৪ ডিজিটের কোড পাঠানো হয়েছে</span>
+                <span>{identifier} নম্বরে ৪ ডিজিটের কোড পাঠানো হয়েছে</span>
               </p>
             </div>
 
@@ -319,4 +377,3 @@ export const RegisterPage: React.FC = () => {
     </div>
   );
 };
-
