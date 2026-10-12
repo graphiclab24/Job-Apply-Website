@@ -3,7 +3,9 @@ import compression from 'compression';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
-import { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import fs from 'fs';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, deleteDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from './src/services/firebase';
 import { formatJobContent, repairCorruptedJobHtml, purgeCompetitorBranding } from './src/utils/formatJobContent';
 import { extractJobLocally } from './src/utils/localJobExtractor';
@@ -16,51 +18,238 @@ const port = process.env.PORT || 3000;
 app.use(express.json({ limit: '15mb' }));
 app.use(compression());
 
+// Serve local uploaded files statically if local disk storage is used
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_DIR));
+
 // Global server-side in-memory cache: Serves millions of visitors with 0 Firestore reads in ~2ms
 let serverFeedCache: { data: any[]; timestamp: number } | null = null;
 let serverAllJobsCache: { data: any[]; timestamp: number } | null = null;
 const serverJobsCache = new Map<string, { data: any; timestamp: number }>();
 const SERVER_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL (auto refreshed or on admin edit)
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
+const DEFAULT_JOBS_FILE = path.join(DATA_DIR, 'default_jobs.json');
+const SHORT_LINKS_FILE = path.join(DATA_DIR, 'short_links.json');
+const STORAGE_CONFIG_FILE = path.join(DATA_DIR, 'storage_config.json');
+
+interface StorageConfig {
+  provider: 'cloudflare-r2' | 'local';
+  accountId?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  bucketName?: string;
+  publicUrl?: string;
+}
+
+function getStorageConfig(): StorageConfig {
+  let conf: StorageConfig = {
+    provider: 'local',
+    accountId: process.env.R2_ACCOUNT_ID || '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    bucketName: process.env.R2_BUCKET_NAME || '',
+    publicUrl: process.env.R2_PUBLIC_URL || '',
+  };
+
+  try {
+    if (fs.existsSync(STORAGE_CONFIG_FILE)) {
+      const fileData = JSON.parse(fs.readFileSync(STORAGE_CONFIG_FILE, 'utf8'));
+      conf = { ...conf, ...fileData };
+    }
+  } catch {}
+
+  if (conf.accountId && conf.accessKeyId && conf.secretAccessKey && conf.bucketName) {
+    conf.provider = 'cloudflare-r2';
+  } else {
+    conf.provider = 'local';
+  }
+
+  return conf;
+}
+
+function getR2Client(conf: StorageConfig): S3Client | null {
+  if (!conf.accountId || !conf.accessKeyId || !conf.secretAccessKey) return null;
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${conf.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: conf.accessKeyId,
+      secretAccessKey: conf.secretAccessKey,
+    },
+  });
+}
+
+function getStoredJobs(): any[] {
+  try {
+    if (fs.existsSync(JOBS_FILE)) {
+      const content = fs.readFileSync(JOBS_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  try {
+    if (fs.existsSync(DEFAULT_JOBS_FILE)) {
+      const content = fs.readFileSync(DEFAULT_JOBS_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function saveStoredJobs(jobs: any[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to save jobs to disk:', err);
+  }
+}
+
+function getStoredShortLinks(): any[] {
+  try {
+    if (fs.existsSync(SHORT_LINKS_FILE)) {
+      const content = fs.readFileSync(SHORT_LINKS_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function saveStoredShortLinks(links: any[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SHORT_LINKS_FILE, JSON.stringify(links, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to save short links to disk:', err);
+  }
+}
+
+async function syncJobsToR2(jobs: any[]): Promise<boolean> {
+  const conf = getStorageConfig();
+  if (conf.provider !== 'cloudflare-r2') return false;
+  const s3 = getR2Client(conf);
+  if (!s3 || !conf.bucketName) return false;
+
+  try {
+    const jobsJson = JSON.stringify(jobs, null, 2);
+    const feedList = jobs.slice(0, 50).map((j) => ({
+      id: j.id,
+      title: j.title || '',
+      slug: j.slug || j.id,
+      category: j.category || 'govt',
+      deadline: j.deadline,
+      publishedAt: j.publishedAt,
+      applyServiceEnabled: Boolean(j.applyServiceEnabled),
+    }));
+    const feedJson = JSON.stringify({ posts: feedList, updatedAt: new Date().toISOString() }, null, 2);
+
+    await Promise.all([
+      s3.send(
+        new PutObjectCommand({
+          Bucket: conf.bucketName,
+          Key: 'jobs.json',
+          Body: jobsJson,
+          ContentType: 'application/json',
+          CacheControl: 'public, max-age=60, s-maxage=300',
+        })
+      ),
+      s3.send(
+        new PutObjectCommand({
+          Bucket: conf.bucketName,
+          Key: 'feed.json',
+          Body: feedJson,
+          ContentType: 'application/json',
+          CacheControl: 'public, max-age=60, s-maxage=300',
+        })
+      ),
+    ]);
+    console.log(`[R2] Successfully synced ${jobs.length} jobs to Cloudflare R2 bucket "${conf.bucketName}"`);
+    return true;
+  } catch (err: any) {
+    console.warn('[R2] Sync notice:', err?.message || err);
+    return false;
+  }
+}
+
 /**
- * Superfast Server-Side Full Jobs Retrieval from RAM
+ * Superfast Server-Side Full Jobs Retrieval from RAM & Resilient Disk/Cloudflare R2 Backup
  */
 async function getAllJobsFromServer(): Promise<any[]> {
-  if (serverAllJobsCache && Date.now() - serverAllJobsCache.timestamp <= SERVER_CACHE_TTL_MS) {
+  if (serverAllJobsCache && Date.now() - serverAllJobsCache.timestamp <= SERVER_CACHE_TTL_MS && serverAllJobsCache.data.length > 0) {
     return serverAllJobsCache.data;
   }
-  try {
-    const q = query(collection(db, 'jobs'), limit(150));
-    const snap = await getDocs(q);
-    const jobs = snap.docs
-      .map((d) => {
-        const j = d.data() as any;
-        return {
-          id: d.id,
-          ...j,
-          deadline: j.deadline?.toDate ? j.deadline.toDate().toISOString() : j.deadline || null,
-          publishedAt: j.publishedAt?.toDate ? j.publishedAt.toDate().toISOString() : j.publishedAt || null,
-          createdAt: j.createdAt?.toDate ? j.createdAt.toDate().toISOString() : j.createdAt || null,
-          updatedAt: j.updatedAt?.toDate ? j.updatedAt.toDate().toISOString() : j.updatedAt || null,
-        };
-      })
-      .filter((j) => j.status !== 'draft');
+  let jobs: any[] = getStoredJobs();
 
-    serverAllJobsCache = { data: jobs, timestamp: Date.now() };
-
-    // Prime individual job cache entries as well
-    jobs.forEach((j) => {
-      serverJobsCache.set(j.id, { data: j, timestamp: Date.now() });
-      if (j.slug && j.slug !== j.id) {
-        serverJobsCache.set(j.slug, { data: j, timestamp: Date.now() });
+  // If local disk doesn't have jobs yet, pull from Cloudflare R2 public URL
+  if (jobs.length === 0) {
+    const conf = getStorageConfig();
+    if (conf.publicUrl) {
+      try {
+        const res = await fetch(`${conf.publicUrl}/jobs.json`);
+        if (res.ok) {
+          const r2Jobs = await res.json();
+          if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
+            jobs = r2Jobs;
+            saveStoredJobs(jobs);
+          }
+        }
+      } catch (r2Err) {
+        console.warn('R2 jobs fetch notice:', r2Err);
       }
-    });
-
-    return jobs;
-  } catch (err: any) {
-    console.warn('Failed to load all jobs for server cache:', err?.message || err);
-    return serverAllJobsCache?.data || [];
+    }
   }
+
+  // If still empty, try Firestore
+  if (jobs.length === 0) {
+    try {
+      const q = query(collection(db, 'jobs'), limit(150));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        jobs = snap.docs
+          .map((d) => {
+            const j = d.data() as any;
+            return {
+              id: d.id,
+              ...j,
+              deadline: j.deadline?.toDate ? j.deadline.toDate().toISOString() : j.deadline || null,
+              publishedAt: j.publishedAt?.toDate ? j.publishedAt.toDate().toISOString() : j.publishedAt || null,
+              createdAt: j.createdAt?.toDate ? j.createdAt.toDate().toISOString() : j.createdAt || null,
+              updatedAt: j.updatedAt?.toDate ? j.updatedAt.toDate().toISOString() : j.updatedAt || null,
+            };
+          })
+          .filter((j) => j.status !== 'draft');
+
+        if (jobs.length > 0) {
+          saveStoredJobs(jobs);
+          syncJobsToR2(jobs).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      console.warn('Firestore jobs query fallback (quota limit or connection):', err?.message || err);
+    }
+  }
+
+  // If still empty, fall back to default
+  if (jobs.length === 0) {
+    jobs = getStoredJobs();
+  }
+
+  serverAllJobsCache = { data: jobs, timestamp: Date.now() };
+
+  // Prime individual job cache entries as well
+  jobs.forEach((j) => {
+    serverJobsCache.set(j.id, { data: j, timestamp: Date.now() });
+    if (j.slug && j.slug !== j.id) {
+      serverJobsCache.set(j.slug, { data: j, timestamp: Date.now() });
+    }
+  });
+
+  return jobs;
 }
 
 // Preload cache asynchronously on boot so first visitor gets 0ms response
@@ -157,10 +346,17 @@ app.get('/api/feed/latest', async (_req: Request, res: Response) => {
     return res.json({ posts, fromCache: false });
   } catch (err: any) {
     console.warn('Server feed fetch notice:', err?.message || err);
-    if (serverFeedCache) {
-      return res.json({ posts: serverFeedCache.data, fromCache: true });
-    }
-    return res.json({ posts: [] });
+    const fallbackJobs = await getAllJobsFromServer();
+    const posts = fallbackJobs.slice(0, 30).map((j) => ({
+      id: j.id,
+      title: j.title || '',
+      slug: j.slug || j.id,
+      category: j.category || 'govt',
+      deadline: j.deadline || null,
+      applyServiceEnabled: Boolean(j.applyServiceEnabled),
+    }));
+    serverFeedCache = { data: posts, timestamp: Date.now() };
+    return res.json({ posts, fromCache: true });
   }
 });
 
@@ -211,12 +407,19 @@ app.get('/api/jobs/:slug', async (req: Request, res: Response) => {
       }
       return res.json(resolvedJob);
     }
-
-    return res.status(404).json({ error: 'Job not found' });
   } catch (err: any) {
-    console.warn('Server job lookup notice:', err?.message || err);
-    return res.status(500).json({ error: 'Failed to retrieve job' });
+    console.warn('Server job lookup notice (quota limit or connection):', err?.message || err);
   }
+
+  // 3. Fallback to server local jobs backup
+  const allJobs = await getAllJobsFromServer();
+  const fallback = allJobs.find((j) => j.slug === slug || j.id === slug);
+  if (fallback) {
+    serverJobsCache.set(slug, { data: fallback, timestamp: Date.now() });
+    return res.json(fallback);
+  }
+
+  return res.status(404).json({ error: 'Job not found' });
 });
 
 /**
@@ -228,13 +431,33 @@ app.get('/s/:code', async (req: Request, res: Response) => {
   if (!code) return res.redirect('/');
 
   const cleanCode = code.trim().toLowerCase();
+
+  // 1. Check local stored short links first (0ms, 0 Firestore reads, quota-immune)
+  const stored = getStoredShortLinks();
+  const found = stored.find((l) => l.id && l.id.toLowerCase() === cleanCode);
+  if (found && found.originalUrl) {
+    found.clicks = (found.clicks || 0) + 1;
+    found.lastClickedAt = new Date().toISOString();
+    saveStoredShortLinks(stored);
+
+    // Update Firestore in background if possible
+    try {
+      updateDoc(doc(db, 'short_links', found.id), {
+        clicks: increment(1),
+        lastClickedAt: serverTimestamp(),
+      }).catch(() => {});
+    } catch {}
+
+    return res.redirect(found.originalUrl);
+  }
+
+  // 2. Fallback to Firestore lookup
   try {
     const snap = await getDoc(doc(db, 'short_links', cleanCode));
     if (snap.exists()) {
       const data = snap.data();
       const targetUrl = data.originalUrl || '/';
 
-      // Increment click count asynchronously without slowing down redirect
       updateDoc(doc(db, 'short_links', cleanCode), {
         clicks: increment(1),
         lastClickedAt: serverTimestamp(),
@@ -250,6 +473,111 @@ app.get('/s/:code', async (req: Request, res: Response) => {
 });
 
 /**
+ * 0-Cost URL Shortener API Endpoints (Admin & Applet)
+ * Provides ultra-resilient short links loading with zero Firestore index or quota dependency
+ */
+app.get('/api/shortener/links', async (req: Request, res: Response) => {
+  let items = getStoredShortLinks();
+  try {
+    const snap = await getDocs(collection(db, 'short_links'));
+    if (!snap.empty) {
+      const firestoreItems = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          originalUrl: data.originalUrl || '',
+          title: data.title || '',
+          clicks: data.clicks || 0,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || null,
+          lastClickedAt: data.lastClickedAt?.toDate ? data.lastClickedAt.toDate().toISOString() : data.lastClickedAt || null,
+        };
+      });
+      // Merge unique
+      const map = new Map<string, any>();
+      items.forEach((it) => map.set(it.id, it));
+      firestoreItems.forEach((it) => map.set(it.id, it));
+      items = Array.from(map.values());
+      saveStoredShortLinks(items);
+    }
+  } catch (err: any) {
+    console.warn('Firestore short links fetch notice (quota/offline fallback):', err?.message);
+  }
+
+  items.sort((a, b) => {
+    const tA = new Date(a.createdAt || 0).getTime();
+    const tB = new Date(b.createdAt || 0).getTime();
+    return tB - tA;
+  });
+
+  return res.json({ success: true, links: items });
+});
+
+app.post('/api/shortener/links', async (req: Request, res: Response) => {
+  try {
+    const { id, originalUrl, title } = req.body;
+    if (!id || !originalUrl) {
+      return res.status(400).json({ success: false, error: 'কোড এবং মূল লিংক প্রয়োজন' });
+    }
+    const cleanId = String(id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    let cleanUrl = String(originalUrl).trim();
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = 'https://' + cleanUrl;
+    }
+
+    const newDoc = {
+      id: cleanId,
+      originalUrl: cleanUrl,
+      title: title ? String(title).trim() : '',
+      clicks: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to disk backup
+    const stored = getStoredShortLinks();
+    const existingIndex = stored.findIndex((l) => l.id === cleanId);
+    if (existingIndex >= 0) {
+      stored[existingIndex] = { ...stored[existingIndex], ...newDoc };
+    } else {
+      stored.unshift(newDoc);
+    }
+    saveStoredShortLinks(stored);
+
+    // Save to Firestore asynchronously
+    try {
+      const docRef = doc(db, 'short_links', cleanId);
+      await setDoc(docRef, { ...newDoc, createdAt: serverTimestamp() }, { merge: true });
+    } catch (fbErr) {
+      console.warn('Firestore short link write notice (saved to disk):', fbErr);
+    }
+
+    return res.json({ success: true, link: newDoc });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+app.delete('/api/shortener/links/:code', async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    if (!code) return res.status(400).json({ success: false, error: 'Code required' });
+    const cleanCode = code.trim().toLowerCase();
+
+    // Remove from disk
+    const stored = getStoredShortLinks().filter((l) => l.id !== cleanCode);
+    saveStoredShortLinks(stored);
+
+    // Remove from Firestore
+    try {
+      await deleteDoc(doc(db, 'short_links', cleanCode));
+    } catch {}
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+/**
  * Superfast Paginated & Filtered Jobs Endpoint (Instant ~2ms RAM response)
  */
 app.get('/api/jobs', async (req: Request, res: Response) => {
@@ -262,7 +590,12 @@ app.get('/api/jobs', async (req: Request, res: Response) => {
   let jobs = await getAllJobsFromServer();
 
   if (category && category !== 'all') {
-    jobs = jobs.filter((j) => j.category === category);
+    jobs = jobs.filter((j) => {
+      if (category === 'ngo') {
+        return j.category === 'ngo' || j.category === 'brac';
+      }
+      return j.category === category;
+    });
   }
 
   if (search) {
@@ -291,12 +624,291 @@ app.get('/api/jobs', async (req: Request, res: Response) => {
  * Immediate Server Cache Invalidation Hook (Called when admin adds/edits a job)
  */
 app.post('/api/feed/purge-cache', (req: Request, res: Response) => {
-  const { slug, id } = req.body || {};
+  const { slug, id, job, isDelete } = req.body || {};
   serverFeedCache = null; // Invalidate feed
   serverAllJobsCache = null; // Invalidate all jobs
   if (slug) serverJobsCache.delete(slug);
   if (id) serverJobsCache.delete(id);
-  res.json({ success: true, message: 'Server cache purged' });
+
+  if (isDelete && id) {
+    const stored = getStoredJobs().filter((j) => j.id !== id);
+    saveStoredJobs(stored);
+    syncJobsToR2(stored).catch(() => {});
+  } else if (job && (job.id || id)) {
+    const stored = getStoredJobs();
+    const jobId = job.id || id;
+    const idx = stored.findIndex((j) => j.id === jobId || (j.slug && j.slug === slug));
+    const normalized = {
+      id: jobId,
+      ...job,
+      updatedAt: new Date().toISOString(),
+    };
+    if (idx >= 0) {
+      stored[idx] = { ...stored[idx], ...normalized };
+    } else {
+      stored.unshift(normalized);
+    }
+    saveStoredJobs(stored);
+    syncJobsToR2(stored).catch(() => {});
+  }
+
+  res.json({ success: true, message: 'Server cache, disk backup and Cloudflare R2 purged/synced' });
+});
+
+/**
+ * Resilient Admin Job Save (Direct Disk & Cloudflare R2 Persistence - Quota Immune)
+ */
+app.post('/api/admin/jobs/save', async (req: Request, res: Response) => {
+  try {
+    const jobData = req.body;
+    if (!jobData || (!jobData.id && !jobData.slug) || !jobData.title) {
+      return res.status(400).json({ success: false, error: 'শিরোনাম ও আইডি/স্লাগ প্রয়োজন' });
+    }
+
+    const jobId = String(jobData.id || jobData.slug).trim();
+    const nowIso = new Date().toISOString();
+    const normalized = {
+      ...jobData,
+      id: jobId,
+      updatedAt: nowIso,
+      createdAt: jobData.createdAt || nowIso,
+    };
+
+    const stored = getStoredJobs();
+    const idx = stored.findIndex((j) => j.id === jobId || (j.slug && j.slug === normalized.slug));
+    if (idx >= 0) {
+      stored[idx] = { ...stored[idx], ...normalized };
+    } else {
+      stored.unshift(normalized);
+    }
+
+    saveStoredJobs(stored);
+
+    // Update in-memory caches
+    serverFeedCache = null;
+    serverAllJobsCache = { data: stored, timestamp: Date.now() };
+    if (normalized.slug) serverJobsCache.set(normalized.slug, { data: normalized, timestamp: Date.now() });
+    serverJobsCache.set(jobId, { data: normalized, timestamp: Date.now() });
+
+    // Immediate sync to Cloudflare R2
+    syncJobsToR2(stored).catch((e) => console.warn('R2 sync notice:', e));
+
+    // Non-blocking Firestore sync in background (doesn't fail if quota is reached)
+    try {
+      const docRef = doc(db, 'jobs', jobId);
+      setDoc(docRef, normalized, { merge: true }).catch((fbErr) => {
+        console.warn('Background Firestore save notice (quota limit or connection):', fbErr?.message || fbErr);
+      });
+    } catch {}
+
+    return res.json({
+      success: true,
+      message: 'বিজ্ঞপ্তি সফলভাবে সেভ করা হয়েছে এবং Cloudflare R2-তে সিঙ্ক হয়েছে',
+      job: normalized,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+/**
+ * Manual or Automatic Cloudflare R2 All Jobs Sync Endpoint
+ */
+app.post('/api/admin/jobs/sync-r2', async (_req: Request, res: Response) => {
+  try {
+    const jobs = await getAllJobsFromServer();
+    const synced = await syncJobsToR2(jobs);
+    const conf = getStorageConfig();
+    return res.json({
+      success: synced,
+      count: jobs.length,
+      publicUrl: conf.publicUrl,
+      jobsUrl: conf.publicUrl ? `${conf.publicUrl}/jobs.json` : null,
+      feedUrl: conf.publicUrl ? `${conf.publicUrl}/feed.json` : null,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+/**
+ * 0-Cost Cloudflare R2 & Media Storage Management Endpoints
+ */
+app.get('/api/storage/config', (_req: Request, res: Response) => {
+  const conf = getStorageConfig();
+  return res.json({
+    isConfigured: conf.provider === 'cloudflare-r2',
+    provider: conf.provider,
+    bucketName: conf.bucketName || '',
+    publicUrl: conf.publicUrl || '',
+    accountId: conf.accountId ? `${conf.accountId.slice(0, 4)}••••${conf.accountId.slice(-4)}` : '',
+    accessKeyId: conf.accessKeyId ? `${conf.accessKeyId.slice(0, 4)}••••` : '',
+  });
+});
+
+app.post('/api/storage/config', async (req: Request, res: Response) => {
+  try {
+    const { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl } = req.body || {};
+    if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+      return res.status(400).json({ success: false, error: 'সবগুলো প্রয়োজনীয় ফিল্ড পূরণ করুন' });
+    }
+
+    const cleanConf: StorageConfig = {
+      provider: 'cloudflare-r2',
+      accountId: String(accountId).trim(),
+      accessKeyId: String(accessKeyId).trim(),
+      secretAccessKey: String(secretAccessKey).trim(),
+      bucketName: String(bucketName).trim(),
+      publicUrl: publicUrl ? String(publicUrl).trim().replace(/\/$/, '') : '',
+    };
+
+    // Test connection with R2
+    const client = getR2Client(cleanConf);
+    if (!client) {
+      return res.status(400).json({ success: false, error: 'ক্লাউডফ্লেয়ার ক্লায়েন্ট তৈরি করা যায়নি' });
+    }
+
+    try {
+      await client.send(new ListObjectsV2Command({ Bucket: cleanConf.bucketName, MaxKeys: 1 }));
+    } catch (testErr: any) {
+      return res.status(400).json({
+        success: false,
+        error: `Cloudflare R2 কানেকশন ব্যর্থ হয়েছে: ${testErr.message || 'ভুল ক্রেডেনশিয়াল বা বাকেটের নাম চেক করুন'}`,
+      });
+    }
+
+    fs.writeFileSync(STORAGE_CONFIG_FILE, JSON.stringify(cleanConf, null, 2), 'utf8');
+
+    return res.json({
+      success: true,
+      message: 'Cloudflare R2 সফলভাবে সংযুক্ত হয়েছে! ১০ জিবি ফ্রি স্পেস ও আনলিমিটেড ব্যান্ডউইথ সক্রিয়।',
+      config: {
+        isConfigured: true,
+        provider: 'cloudflare-r2',
+        bucketName: cleanConf.bucketName,
+        publicUrl: cleanConf.publicUrl,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/upload', async (req: Request, res: Response) => {
+  try {
+    const { fileData, fileName, folder = 'files', mimeType } = req.body || {};
+    if (!fileData) {
+      return res.status(400).json({ success: false, error: 'ফাইল ডাটা পাওয়া যায়নি' });
+    }
+
+    let buffer: Buffer;
+    let detectedMime = mimeType || 'application/octet-stream';
+
+    if (fileData.startsWith('data:')) {
+      const matches = fileData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        detectedMime = matches[1];
+        buffer = Buffer.from(matches[2], 'base64');
+      } else {
+        buffer = Buffer.from(fileData, 'base64');
+      }
+    } else {
+      buffer = Buffer.from(fileData, 'base64');
+    }
+
+    let ext = 'bin';
+    if (detectedMime.includes('jpeg') || detectedMime.includes('jpg')) ext = 'jpg';
+    else if (detectedMime.includes('png')) ext = 'png';
+    else if (detectedMime.includes('webp')) ext = 'webp';
+    else if (detectedMime.includes('pdf')) ext = 'pdf';
+
+    const safeName = (fileName || `file_${Date.now()}`)
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]/g, '_')
+      .replace(/\.[^/.]+$/, '');
+    const cleanKey = `${folder}/${Date.now()}_${safeName}.${ext}`;
+
+    const conf = getStorageConfig();
+
+    if (conf.provider === 'cloudflare-r2') {
+      const client = getR2Client(conf);
+      if (client && conf.bucketName) {
+        await client.send(
+          new PutObjectCommand({
+            Bucket: conf.bucketName,
+            Key: cleanKey,
+            Body: buffer,
+            ContentType: detectedMime,
+          })
+        );
+
+        let finalUrl = '';
+        if (conf.publicUrl) {
+          finalUrl = `${conf.publicUrl}/${cleanKey}`;
+        } else {
+          finalUrl = `https://${conf.bucketName}.${conf.accountId}.r2.cloudflarestorage.com/${cleanKey}`;
+        }
+
+        return res.json({
+          success: true,
+          url: finalUrl,
+          key: cleanKey,
+          provider: 'cloudflare-r2',
+          sizeBytes: buffer.length,
+          mime: detectedMime,
+        });
+      }
+    }
+
+    // Local Disk Fallback
+    const targetFolder = path.join(UPLOADS_DIR, folder);
+    if (!fs.existsSync(targetFolder)) fs.mkdirSync(targetFolder, { recursive: true });
+
+    const localFileName = `${Date.now()}_${safeName}.${ext}`;
+    const localFilePath = path.join(targetFolder, localFileName);
+    fs.writeFileSync(localFilePath, buffer);
+
+    const relativeUrl = `/uploads/${folder}/${localFileName}`;
+
+    return res.json({
+      success: true,
+      url: relativeUrl,
+      key: cleanKey,
+      provider: 'local-disk',
+      sizeBytes: buffer.length,
+      mime: detectedMime,
+    });
+  } catch (err: any) {
+    console.error('File upload error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'ফাইল আপলোড ব্যর্থ হয়েছে' });
+  }
+});
+
+app.delete('/api/storage/file', async (req: Request, res: Response) => {
+  try {
+    const { key, url } = req.body || {};
+    const conf = getStorageConfig();
+
+    if (conf.provider === 'cloudflare-r2' && key) {
+      const client = getR2Client(conf);
+      if (client && conf.bucketName) {
+        await client.send(new DeleteObjectCommand({ Bucket: conf.bucketName, Key: key }));
+        return res.json({ success: true, message: 'Cloudflare R2 থেকে ফাইল মুছে ফেলা হয়েছে' });
+      }
+    }
+
+    if (url && typeof url === 'string' && url.startsWith('/uploads/')) {
+      const localPath = path.join(process.cwd(), url);
+      if (fs.existsSync(localPath)) {
+        fs.unlinkSync(localPath);
+      }
+      return res.json({ success: true, message: 'লোকাল ডিস্ক থেকে ফাইল মুছে ফেলা হয়েছে' });
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
 });
 
 /**

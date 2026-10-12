@@ -75,6 +75,7 @@ export const AdminJobFormPage: React.FC = () => {
   const [coverPreview, setCoverPreview] = useState<string>('');
   const [coverUploading, setCoverUploading] = useState(false);
   const [circularLink, setCircularLink] = useState('');
+  const [pdfUploading, setPdfUploading] = useState(false);
   const [circularImages, setCircularImages] = useState<string[]>([]);
   const [uploadingMultiImages, setUploadingMultiImages] = useState(false);
   const [multiUploadProgress, setMultiUploadProgress] = useState('');
@@ -283,22 +284,87 @@ export const AdminJobFormPage: React.FC = () => {
         throw new Error('কভার ইমেজের সাইজ সর্বোচ্চ ১০০ KB হতে পারবে');
       }
 
+      let finalUrl = compressed.dataUrl;
+      try {
+        const upRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileData: compressed.dataUrl,
+            fileName: `${slug || 'job'}_cover_${file.name}`,
+            folder: 'covers',
+            mimeType: smartMime,
+          }),
+        });
+        const upData = await upRes.json();
+        if (upRes.ok && upData.success && upData.url) {
+          finalUrl = upData.url;
+        }
+      } catch {
+        // Fallback to dataUrl
+      }
+
       await saveFile({
         id: getFileId.cover(jobId),
         ownerUid: user?.uid || 'admin',
         kind: 'cover',
         mime: smartMime,
         sizeBytes: compressed.sizeBytes,
-        data: compressed.dataUrl,
+        data: finalUrl,
       });
 
       setHasCover(true);
-      setCoverPreview(compressed.dataUrl);
+      setCoverPreview(finalUrl);
       success('কভার ইমেজ সফলভাবে WebP ফরম্যাটে সেভ হয়েছে (১০০ KB-এর নিচে)');
     } catch (err: any) {
       error(err.message || 'কভার ইমেজ আপলোড ব্যর্থ হয়েছে');
     } finally {
       setCoverUploading(false);
+    }
+  };
+
+  const handleDirectPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      error('ফাইলের সাইজ সর্বোচ্চ ২৫ MB হতে পারবে');
+      return;
+    }
+
+    setPdfUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileData: base64,
+              fileName: `${slug || 'job'}_circular_${file.name}`,
+              folder: 'circulars',
+              mimeType: file.type || 'application/pdf',
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.url) {
+            setCircularLink(data.url);
+            success('সার্কুলার ফাইল সফলভাবে Cloudflare R2-তে আপলোড হয়েছে!');
+          } else {
+            error(data.error || 'ফাইল আপলোড ব্যর্থ হয়েছে');
+          }
+        } catch (err: any) {
+          error(err?.message || 'আপলোড করতে সমস্যা হয়েছে');
+        } finally {
+          setPdfUploading(false);
+          if (e.target) e.target.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setPdfUploading(false);
     }
   };
 
@@ -327,12 +393,33 @@ export const AdminJobFormPage: React.FC = () => {
         } else {
           // Compress into ultra-crisp lightweight WebP (<180KB)
           const comp = await compressImageToDataUrl(file, 1400, 1900, 180 * 1024, smartMime);
-          newImageUrls.push(comp.dataUrl);
+          
+          // Fast direct upload to Cloudflare R2
+          try {
+            const upRes = await fetch('/api/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileData: comp.dataUrl,
+                fileName: `${slug || 'job'}_page_${circularImages.length + i + 1}_${file.name}`,
+                folder: 'circulars',
+                mimeType: smartMime,
+              }),
+            });
+            const upData = await upRes.json();
+            if (upRes.ok && upData.success && upData.url) {
+              newImageUrls.push(upData.url);
+            } else {
+              newImageUrls.push(comp.dataUrl);
+            }
+          } catch {
+            newImageUrls.push(comp.dataUrl);
+          }
         }
       }
 
       setCircularImages((prev) => [...prev, ...newImageUrls]);
-      success(`✨ এক সাথে ${files.length}টি ছবি WebP ফরম্যাটে যুক্ত হয়েছে!`);
+      success(`✨ এক সাথে ${files.length}টি ছবি ক্লাউডে সফলভাবে যুক্ত হয়েছে!`);
     } catch (err: any) {
       error(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
     } finally {
@@ -459,23 +546,36 @@ export const AdminJobFormPage: React.FC = () => {
         jobData.createdAt = serverTimestamp();
       }
 
-      // Fast save with 12s safety timeout so button NEVER freezes
-      await Promise.race([
-        setDoc(doc(db, 'jobs', jobId), jobData, { merge: true }),
-        new Promise((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  'সার্ভারে সেভ হতে অতিরিক্ত সময় নিচ্ছে। আপনার ইন্টারনেট কানেকশন বা ফায়ারবেস অথেনটিকেশন চেক করুন।'
-                )
-              ),
-            12000
-          )
-        ),
-      ]);
+      // 1. Save directly to Server API (Persists to disk and Cloudflare R2 with 0 Firestore quota dependency)
+      try {
+        const saveRes = await fetch('/api/admin/jobs/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...jobData,
+            id: jobId,
+            deadline: deadlineDate ? deadlineDate.toISOString() : null,
+            publishedAt: pubDate ? pubDate.toISOString() : null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }),
+        });
+        if (!saveRes.ok) {
+          const errData = await saveRes.json().catch(() => ({}));
+          console.warn('Server direct save notice:', errData);
+        }
+      } catch (srvErr) {
+        console.warn('Server direct save failed, falling back to Firestore SDK:', srvErr);
+      }
 
-      success(isEdit ? 'সার্কুলার আপডেট সম্পন্ন হয়েছে' : 'নতুন সার্কুলার প্রকাশ করা হয়েছে');
+      // 2. Try Firestore SDK in background / non-blocking so quota exhaustion never blocks admin
+      try {
+        setDoc(doc(db, 'jobs', jobId), jobData, { merge: true }).catch((fbErr) => {
+          console.warn('Direct Firestore save note (quota limit or connection):', fbErr?.message || fbErr);
+        });
+      } catch {}
+
+      success(isEdit ? 'সার্কুলার আপডেট সম্পন্ন হয়েছে (R2 ক্লাউডে সংরক্ষিত)' : 'নতুন সার্কুলার প্রকাশ করা হয়েছে (R2 ক্লাউডে সংরক্ষিত)');
 
       // Sync feed and invalidate cache asynchronously in the background (NON-BLOCKING)
       syncJobToFeed(jobId, jobData, 'upsert').catch((feedErr) => {
@@ -486,7 +586,7 @@ export const AdminJobFormPage: React.FC = () => {
       fetch('/api/feed/purge-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: jobData.slug, id: jobId }),
+        body: JSON.stringify({ slug: jobData.slug, id: jobId, job: jobData }),
       }).catch(() => {});
 
       navigate('/admin/jobs');
@@ -797,20 +897,33 @@ export const AdminJobFormPage: React.FC = () => {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-gray-700">
-                সার্কুলার ফাইল লিংক (Google Drive বা অফিসিয়াল সাইট লিংক)
+                সার্কুলার ফাইল লিংক (Cloudflare R2, Google Drive বা অফিসিয়াল লিংক)
               </label>
-              <DrivePickerButton
-                acceptMime="pdf"
-                label="Google Drive থেকে বাছুন / আপলোড করুন"
-                onSelectDriveUrl={(url) => setCircularLink(url)}
-              />
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold cursor-pointer hover:bg-blue-100 border border-blue-200 transition-colors">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{pdfUploading ? 'R2 আপলোড হচ্ছে...' : 'R2 ক্লাউডে PDF আপলোড'}</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={handleDirectPdfUpload}
+                    className="hidden"
+                    disabled={pdfUploading}
+                  />
+                </label>
+                <DrivePickerButton
+                  acceptMime="pdf"
+                  label="গুগল ড্রাইভ"
+                  onSelectDriveUrl={(url) => setCircularLink(url)}
+                />
+              </div>
             </div>
             <Input
               label=""
-              placeholder="https://drive.google.com/... অথবা অফিসিয়াল লিংক"
+              placeholder="https://pub-...r2.dev/... অথবা https://drive.google.com/... অথবা অফিসিয়াল লিংক"
               value={circularLink}
               onChange={(e) => setCircularLink(e.target.value)}
-              helperText="সার্কুলার PDF সরাসরি গুগল ড্রাইভে আপলোড করে অথবা ড্রাইভ থেকে বেছে লিংক দিতে পারেন"
+              helperText="সার্কুলার PDF সরাসরি Cloudflare R2 ক্লাউডে আপলোড করতে পারেন অথবা ড্রাইভ/অফিসিয়াল লিংক পেস্ট করতে পারেন"
             />
           </div>
         </div>

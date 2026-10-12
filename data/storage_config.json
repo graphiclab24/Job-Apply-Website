@@ -1,0 +1,8 @@
+{
+  "provider": "cloudflare-r2",
+  "accountId": "2da18d6e98a95996350fb9f05028427d",
+  "accessKeyId": "38136facb6e57ada1c351859f828376c",
+  "secretAccessKey": "82ee5f5d7c06a77ad9867accbd285a6a9e4bb8077d9ab73b3e6812979905b3a0",
+  "bucketName": "bdjob-files",
+  "publicUrl": "https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev"
+}

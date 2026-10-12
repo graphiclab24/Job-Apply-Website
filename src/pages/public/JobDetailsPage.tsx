@@ -27,6 +27,7 @@ import {
   X,
   RotateCcw,
 } from 'lucide-react';
+import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../../context/AuthContext';
 import { formatJobContent } from '../../utils/formatJobContent';
@@ -119,6 +120,10 @@ export const JobDetailsPage: React.FC = () => {
           resolvedJob = { id: docItem.id, ...docItem.data() } as JobCircular;
         } else if (docSnap && docSnap.exists()) {
           resolvedJob = { id: docSnap.id, ...docSnap.data() } as JobCircular;
+        }
+
+        if (!resolvedJob && slug) {
+          resolvedJob = DEFAULT_JOBS.find((j) => j.slug === slug || j.id === slug) || null;
         }
 
         if (resolvedJob) {
@@ -410,8 +415,8 @@ export const JobDetailsPage: React.FC = () => {
               <span>পদের তালিকা ও জেলা ভিত্তিক শর্তাবলী</span>
             </h3>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left bg-white rounded-lg border border-gray-200">
+            <div className="overflow-x-auto touch-pan-x">
+              <table className="w-full min-w-[500px] text-xs text-left bg-white rounded-lg border border-gray-200">
                 <thead className="bg-gray-100 text-gray-700">
                   <tr>
                     <th className="p-2.5">পদের নাম</th>

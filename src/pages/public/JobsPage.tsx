@@ -14,6 +14,7 @@ import {
 import { db } from '../../services/firebase';
 import { getCached, setCached, precacheJob, getCachedWithSWR, prefetchJobDetail } from '../../services/cache';
 import { JobCircular } from '../../types';
+import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 
@@ -22,12 +23,10 @@ const ITEMS_PER_PAGE = 20;
 export const JobsPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     const page1 = getCached<JobCircular[]>('jobs_page_1');
-    if (page1 && page1.length > 0) return page1;
-    const feed = getCached<any[]>('feed_latest');
-    if (feed && feed.length > 0) return feed as JobCircular[];
-    return [];
+    if (page1 && page1.length >= 8) return page1;
+    return DEFAULT_JOBS;
   });
-  const [loading, setLoading] = useState(() => jobs.length === 0);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState(() => {
     return new URLSearchParams(window.location.search).get('search') || '';
   });
@@ -42,14 +41,10 @@ export const JobsPage: React.FC = () => {
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
     const cached = getCached<JobCircular[]>(cacheKey);
 
-    if (cached && cached.length > 0) {
+    if (cached && cached.length >= 8) {
       setJobs(cached);
       setLoading(false);
       return;
-    }
-
-    if (jobs.length === 0) {
-      setLoading(true);
     }
 
     // Step 1: Ultra-fast Server-Side Edge Endpoint (~2ms from RAM)
@@ -59,7 +54,7 @@ export const JobsPage: React.FC = () => {
       );
       if (apiRes.ok) {
         const data = await apiRes.json();
-        if (Array.isArray(data?.jobs)) {
+        if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
           setJobs(data.jobs);
           setHasMore(Boolean(data.hasMore));
           setCached(cacheKey, data.jobs);
@@ -67,20 +62,38 @@ export const JobsPage: React.FC = () => {
             setCached('jobs_page_1', data.jobs);
           }
           data.jobs.forEach(precacheJob);
-          // Speculatively prefetch full circular details of top jobs during idle time
-          if (typeof window !== 'undefined') {
-            const idle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1000));
-            idle(() => {
-              data.jobs.slice(0, 4).forEach((j: any) => prefetchJobDetail(j.slug || j.id));
-            });
-          }
           setLoading(false);
           return;
         }
       }
     } catch {
-      // Fallback to client-side Firestore SDK below
+      // Try Cloudflare R2 public CDN fallback directly
     }
+
+    // Step 1.5: Try Cloudflare R2 public CDN fallback directly
+    try {
+      const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+      if (r2Res.ok) {
+        let r2Jobs = await r2Res.json();
+        if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
+          if (categoryFilter && categoryFilter !== 'all') {
+            r2Jobs = r2Jobs.filter((j: any) =>
+              categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
+            );
+          }
+          if (searchTerm) {
+            r2Jobs = r2Jobs.filter((j: any) =>
+              j.title?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+          }
+          setJobs(r2Jobs);
+          setHasMore(false);
+          setCached(cacheKey, r2Jobs);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {}
 
     // Step 2: Client-side Firestore SDK Fallback (If offline or API unavailable)
     try {
@@ -150,11 +163,11 @@ export const JobsPage: React.FC = () => {
 
   useEffect(() => {
     fetchPage(currentPage);
-  }, [currentPage]);
+  }, [currentPage, categoryFilter, searchTerm]);
 
   const now = new Date();
 
-  const filteredJobs = jobs.filter((job) => {
+  const filteredJobs = (jobs && jobs.length > 0 ? jobs : DEFAULT_JOBS).filter((job) => {
     const term = searchTerm.toLowerCase().trim();
     const matchesSearch =
       !term ||
@@ -162,7 +175,9 @@ export const JobsPage: React.FC = () => {
       job.posts?.some((p) => p.name.toLowerCase().includes(term)) ||
       job.tags?.some((t) => t.toLowerCase().includes(term)) ||
       (Boolean(job.focusKeyword) && job.focusKeyword!.toLowerCase().includes(term));
-    const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
+    const matchesCategory =
+      categoryFilter === 'all' ||
+      (categoryFilter === 'ngo' ? job.category === 'ngo' || job.category === 'brac' : job.category === categoryFilter);
     return matchesSearch && matchesCategory;
   });
 

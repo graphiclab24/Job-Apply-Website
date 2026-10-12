@@ -2,6 +2,7 @@ import { doc, getDoc, runTransaction, serverTimestamp, collection, getDocs, limi
 import { db } from './firebase';
 import { getCached, setCached, invalidateCache } from './cache';
 import { JobCircular, JobCategory } from '../types';
+import { DEFAULT_FEED_JOBS } from '../data/defaultJobs';
 
 export interface FeedJobSummary {
   id: string;
@@ -24,10 +25,12 @@ const CACHE_KEY = 'feed_latest';
 /**
  * Fetch latest 30 jobs feed summary (1 single Firestore read, or 0 if in-memory cached)
  */
-export async function getFeedLatest(): Promise<FeedJobSummary[]> {
-  const cached = getCached<FeedJobSummary[]>(CACHE_KEY);
-  if (cached && cached.length > 0) {
-    return cached;
+export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummary[]> {
+  if (!forceRefresh) {
+    const cached = getCached<FeedJobSummary[]>(CACHE_KEY);
+    if (cached && cached.length >= 8) {
+      return cached;
+    }
   }
 
   // 1. Fast Server-Side Edge API (Zero client-side Firestore reads, ~10ms HTTP response)
@@ -41,7 +44,21 @@ export async function getFeedLatest(): Promise<FeedJobSummary[]> {
       }
     }
   } catch (apiErr) {
-    // Non-fatal, fallback to client-side Firestore SDK
+    // Non-fatal, try Cloudflare R2 public CDN below
+  }
+
+  // 1.5. Cloudflare R2 Public CDN Edge Fallback (Global CDN, 0 Firestore reads, 100% uptime)
+  try {
+    const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/feed.json');
+    if (r2Res.ok) {
+      const r2Data = await r2Res.json();
+      if (Array.isArray(r2Data?.posts) && r2Data.posts.length > 0) {
+        setCached(CACHE_KEY, r2Data.posts);
+        return r2Data.posts;
+      }
+    }
+  } catch (r2Err) {
+    // Fallback to client-side SDK below
   }
 
   // 2. Client-Side Firestore SDK Fallback (If server API route unavailable)
@@ -52,8 +69,10 @@ export async function getFeedLatest(): Promise<FeedJobSummary[]> {
     if (snap.exists()) {
       const data = snap.data() as FeedDocument;
       const posts = data.posts || [];
-      setCached(CACHE_KEY, posts);
-      return posts;
+      if (posts.length > 0) {
+        setCached(CACHE_KEY, posts);
+        return posts;
+      }
     }
 
     // Cold start fallback: If feed/latest doesn't exist yet, seed from jobs
@@ -95,16 +114,15 @@ export async function getFeedLatest(): Promise<FeedJobSummary[]> {
 
     if (seededPosts.length > 0) {
       setCached(CACHE_KEY, seededPosts);
+      return seededPosts;
     }
-    return seededPosts;
   } catch (err: any) {
-    if (err?.message?.includes('client is offline')) {
-      console.warn('Feed notice: Firestore client initializing or offline.');
-    } else {
-      console.warn('Feed notice: Unable to fetch live feed, using empty fallback.', err?.message || err);
-    }
-    return [];
+    console.warn('Direct Firestore feed fetch error:', err);
   }
+
+  // 3. Guaranteed Rock-Solid Bundled Fallback (NEVER EMPTY)
+  setCached(CACHE_KEY, DEFAULT_FEED_JOBS);
+  return DEFAULT_FEED_JOBS;
 }
 
 /**

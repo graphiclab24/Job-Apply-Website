@@ -1,0 +1,331 @@
+[
+  {
+    "id": "railway-assistant-station-master-2026",
+    "title": "বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি ২০২৬ (পদ সংখ্যা: ৫৬০ জন)",
+    "slug": "railway-assistant-station-master-2026",
+    "category": "govt",
+    "content": "<h3>বাংলাদেশ রেলওয়ে বিভিন্ন পদে জনবল নিয়োগের জন্য বিজ্ঞপ্তি প্রকাশ করেছে</h3><p>বাংলাদেশ রেলওয়ে রাজস্ব খাতভুক্ত স্থায়ী শূন্য পদসমূহে সরাসরি নিয়োগের নিমিত্তে প্রকৃত বাংলাদেশী নাগরিকদের নিকট হতে দরখাস্ত আহ্বান করা যাচ্ছে।</p><h4>পদের বিবরণ:</h4><ul><li>সহকারী স্টেশন মাস্টার - ২৩৫ জন</li><li>পয়েন্টসম্যান - ১৮৫ জন</li><li>গেটকিপার / ট্রাফিক - ১৪০ জন</li></ul><h4>আবেদনের যোগ্যতা:</h4><p>স্বীকৃত বিশ্ববিদ্যালয় হতে যেকোনো বিষয়ে দ্বিতীয় শ্রেণি বা সমমানের সিজিপিএসহ স্নাতক বা সমমানের ডিগ্রি। অন্যান্য পদে এইচএসসি/এসএসসি পাস।</p>",
+    "deadline": "2026-11-15T23:59:59.000Z",
+    "applyLink": "http://br.teletalk.com.bd",
+    "applyServiceEnabled": true,
+    "applicationFee": 223,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "সহকারী স্টেশন মাস্টার",
+        "count": 235,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 223,
+        "serviceCharge": 50
+      },
+      {
+        "name": "পয়েন্টসম্যান",
+        "count": 185,
+        "district": "ALL",
+        "districts": ["ঢাকা", "চট্টগ্রাম", "রাজশাহী", "খুলনা", "সিলেট", "বরিশাল", "রংপুর", "ময়মনসিংহ"],
+        "applicationFee": 112,
+        "serviceCharge": 40
+      },
+      {
+        "name": "গেটকিপার (ট্রাফিক)",
+        "count": 140,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 112,
+        "serviceCharge": 40
+      }
+    ],
+    "tags": ["বাংলাদেশ রেলওয়ে", "সরকারি চাকরি", "রেলওয়ে নিয়োগ", "Railway Job"],
+    "status": "published",
+    "publishedAt": "2026-10-10T00:00:00.000Z",
+    "createdAt": "2026-10-10T00:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "bangladesh-bank-officer-general-2026",
+    "title": "বাংলাদেশ ব্যাংক সহকারী পরিচালক (সাধারণ) পদে নিয়োগ বিজ্ঞপ্তি ২০২৬",
+    "slug": "bangladesh-bank-officer-general-2026",
+    "category": "govt",
+    "content": "<h3>ব্যাংকার্স সিলেকশন কমিটি সচিবালয় - বাংলাদেশ ব্যাংক</h3><p>বাংলাদেশ ব্যাংকে 'সহকারী পরিচালক (সাধারণ)' এর ১০০টি শূন্য পদে সরাসরি নিয়োগের লক্ষ্যে আগ্রহী প্রার্থীদের নিকট হতে অনলাইনে আবেদন আহ্বান করা যাচ্ছে।</p><h4>শিক্ষাগত যোগ্যতা:</h4><p>কোনো স্বীকৃত বিশ্ববিদ্যালয় হতে যেকোনো বিষয়ে চার বছর মেয়াদী স্নাতক (সম্মান) বা স্নাতকোত্তর ডিগ্রি। মাধ্যমিক বা তদূর্ধ্ব পর্যায়ে কমপক্ষে দুটি প্রথম বিভাগ/শ্রেণি থাকতে হবে।</p>",
+    "deadline": "2026-11-20T23:59:59.000Z",
+    "applyLink": "https://erecruitment.bb.org.bd",
+    "applyServiceEnabled": true,
+    "applicationFee": 200,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "সহকারী পরিচালক (সাধারণ)",
+        "count": 100,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 200,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["বাংলাদেশ ব্যাংক", "সহকারী পরিচালক", "ব্যাংক জব", "Bank Job"],
+    "status": "published",
+    "publishedAt": "2026-10-11T00:00:00.000Z",
+    "createdAt": "2026-10-11T00:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "reb-assistant-junior-engineer-2026",
+    "title": "বাংলাদেশ পল্লী বিদ্যুতায়ন বোর্ড (BREB) সহকারী জুনিয়র ইঞ্জিনিয়ার নিয়োগ",
+    "slug": "reb-assistant-junior-engineer-2026",
+    "category": "govt",
+    "content": "<h3>বাংলাদেশ পল্লী বিদ্যুতায়ন বোর্ডে বিশাল নিয়োগ বিজ্ঞপ্তি</h3><p>পল্লী বিদ্যুৎ সমিতিসমূহে মিটার রিডার, লাইনম্যান ও সহকারী জুনিয়র ইঞ্জিনিয়ার পদে জনবল নিয়োগের বিজ্ঞপ্তি প্রকাশ করা হয়েছে।</p>",
+    "deadline": "2026-11-25T23:59:59.000Z",
+    "applyLink": "http://breb.teletalk.com.bd",
+    "applyServiceEnabled": true,
+    "applicationFee": 223,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "সহকারী জুনিয়র ইঞ্জিনিয়ার (আইটি/ইলেকট্রিক্যাল)",
+        "count": 78,
+        "district": "ALL",
+        "districts": ["ঢাকা", "গাজীপুর", "নারায়ণগঞ্জ", "কুমিল্লা", "বগুড়া", "যশোর"],
+        "applicationFee": 223,
+        "serviceCharge": 50
+      },
+      {
+        "name": "লাইনম্যান গ্রেড-২",
+        "count": 350,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 112,
+        "serviceCharge": 40
+      }
+    ],
+    "tags": ["পল্লী বিদ্যুৎ", "BREB", "ইঞ্জিনিয়ার", "সরকারি চাকরি"],
+    "status": "published",
+    "publishedAt": "2026-10-09T00:00:00.000Z",
+    "createdAt": "2026-10-09T00:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "dgfp-family-planning-circular-2026",
+    "title": "পরিবার পরিকল্পনা অধিদপ্তর নিয়োগ বিজ্ঞপ্তি ২০২৬ (বিভিন্ন জেলায় পদ)",
+    "slug": "dgfp-family-planning-circular-2026",
+    "category": "govt",
+    "content": "<h3>স্বাস্থ্য শিক্ষা ও পরিবার কল্যাণ বিভাগ</h3><p>পরিবার পরিকল্পনা অধিদপ্তরাধীন পরিবার কল্যাণ সহকারী (FWA) এবং পরিবার পরিকল্পনা পরিদর্শক পদে নিয়োগ বিজ্ঞপ্তি। নির্দিষ্ট জেলার স্থায়ী বাসিন্দারা আবেদন করতে পারবেন।</p>",
+    "deadline": "2026-11-30T23:59:59.000Z",
+    "applyLink": "http://dgfp.teletalk.com.bd",
+    "applyServiceEnabled": true,
+    "applicationFee": 112,
+    "serviceCharge": 40,
+    "posts": [
+      {
+        "name": "পরিবার কল্যাণ সহকারী (মহিলা)",
+        "count": 420,
+        "district": "নির্দিষ্ট জেলা",
+        "districts": ["টাঙ্গাইল", "ময়মনসিংহ", "সিরাজগঞ্জ", "পাবনা", "কুষ্টিয়া", "দিনাজপুর", "ফরিদপুর"],
+        "applicationFee": 112,
+        "serviceCharge": 40
+      },
+      {
+        "name": "ফার্মাসিস্ট",
+        "count": 85,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 223,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["পরিবার পরিকল্পনা অধিদপ্তর", "DGFP", "FWA", "চাকরি"],
+    "status": "published",
+    "publishedAt": "2026-10-08T00:00:00.000Z",
+    "createdAt": "2026-10-08T00:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "brac-programme-organizer-2026",
+    "title": "ব্র্যাক (BRAC) কর্মসূচি সংগঠক পদে নিয়োগ বিজ্ঞপ্তি ২০২৬",
+    "slug": "brac-programme-organizer-2026",
+    "category": "ngo",
+    "content": "<h3>ব্র্যাক ক্ষুদ্রঋণ কর্মসূচি</h3><p>বিশ্বের অন্যতম শীর্ষ বেসরকারি উন্নয়ন সংস্থা ব্র্যাক-এ কর্মসূচি সংগঠক (দাবি) পদে দেশের যেকোনো স্থানে কাজ করতে আগ্রহী প্রার্থীদের আবেদন আহ্বান করা হচ্ছে।</p><h4>শিক্ষাগত যোগ্যতা ও অভিজ্ঞতা:</h4><p>যেকোনো বিষয়ে স্নাতক বা স্নাতকোত্তর ডিগ্রি। মাঠপর্যায়ে কাজ করার মানসিকতা এবং মোটরসাইকেল চালানোর বৈধ লাইসেন্স থাকতে হবে।</p>",
+    "deadline": "2026-11-18T23:59:59.000Z",
+    "applyLink": "https://careers.brac.net",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "কর্মসূচি সংগঠক (দাবি)",
+        "count": 150,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["ব্র্যাক", "BRAC", "এনজিও চাকরি", "NGO Job"],
+    "status": "published",
+    "publishedAt": "2026-10-12T00:00:00.000Z",
+    "createdAt": "2026-10-12T00:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "asa-credit-officer-circular-2026",
+    "title": "আশা (ASA) এনজিও লোন অফিসার পদে নিয়োগ বিজ্ঞপ্তি ২০২৬",
+    "slug": "asa-credit-officer-circular-2026",
+    "category": "ngo",
+    "content": "<h3>আশা (ASA) ক্ষুদ্রঋণ কর্মসূচিতে বিশাল নিয়োগ</h3><p>দেশের শীর্ষস্থানীয় বেসরকারি উন্নয়ন সংস্থা আশা (ASA)-এর বিভিন্ন শাখা কার্যালয়ে ঋণ কার্যক্রম পরিচালনার জন্য লোন অফিসার (গ্রেড-১) পদে জরুরি ভিত্তিতে জনবল নিয়োগ করা হবে।</p><h4>সুযোগ-সুবিধা:</h4><p>আকর্ষণীয় বেতন কাঠামো, প্রভিডেন্ট ফান্ড, গ্র্যাচুইটি, উৎসব ভাতা এবং চিকিৎসা সুবিধা প্রদান করা হবে।</p>",
+    "deadline": "2026-11-22T23:59:59.000Z",
+    "applyLink": "https://asa.org.bd/career",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "লোন অফিসার (গ্রেড-১)",
+        "count": 200,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["আশা এনজিও", "ASA", "লোন অফিসার", "NGO Job 2026"],
+    "status": "published",
+    "publishedAt": "2026-10-12T06:00:00.000Z",
+    "createdAt": "2026-10-12T06:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "beximco-group-management-executive-2026",
+    "title": "বেক্সিমকো গ্রুপ (BEXIMCO) ম্যানেজমেন্ট এক্সিকিউটিভ নিয়োগ বিজ্ঞপ্তি ২০২৬",
+    "slug": "beximco-group-management-executive-2026",
+    "category": "private",
+    "content": "<h3>বেক্সিমকো গ্রুপে আকর্ষক ক্যারিয়ারের সুযোগ</h3><p>বাংলাদেশের অন্যতম শীর্ষস্থানীয় করপোরেট প্রতিষ্ঠান বেক্সিমকো গ্রুপের করপোরেট হেড অফিসে বিভিন্ন ডিপার্টমেন্টে ম্যানেজমেন্ট ট্রেইনি ও এক্সিকিউটিভ পদে প্রতিভাবান কর্মকর্তাদের নিয়োগ দেওয়া হবে।</p><h4>প্রয়োজনীয় যোগ্যতা:</h4><p>স্বীকৃত বিশ্ববিদ্যালয় হতে বিবিএ/এমবিএ অথবা যেকোনো বিষয়ে স্নাতক ডিগ্রি। ইংরেজি ও কম্পিউটারে ভালো দক্ষতা থাকতে হবে।</p>",
+    "deadline": "2026-11-28T23:59:59.000Z",
+    "applyLink": "https://www.beximco.com/careers",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "ম্যানেজমেন্ট ট্রেইনি এক্সিকিউটিভ",
+        "count": 45,
+        "district": "ALL",
+        "districts": ["ঢাকা", "গাজীপুর", "চট্টগ্রাম"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["বেক্সিমকো", "BEXIMCO", "বেসরকারি চাকরি", "Corporate Job"],
+    "status": "published",
+    "publishedAt": "2026-10-12T08:00:00.000Z",
+    "createdAt": "2026-10-12T08:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "walton-service-sales-officer-2026",
+    "title": "ওয়ালটন হাই-টেক ইন্ডাস্ট্রিজ (Walton) সেলস ও সার্ভিস অফিসার নিয়োগ",
+    "slug": "walton-service-sales-officer-2026",
+    "category": "private",
+    "content": "<h3>ওয়ালটন হাই-টেক ইন্ডাস্ট্রিজ পিএলসি</h3><p>দেশসেরা ইলেকট্রনিক্স ও প্রযুক্তি পণ্য প্রস্তুতকারক প্রতিষ্ঠান ওয়ালটনে সারা দেশে নিজস্ব প্লাজা ও ডিলার শোরুমে কাস্টমার রিলেশনশিপ ও সেলস বিভাগে অভিজ্ঞ ও উদ্যমী জনবল নিয়োগ করা হচ্ছে।</p><h4>সুযোগ-সুবিধা:</h4><p>উৎসব ভাতা, বাৎসরিক ইনক্রিমেন্ট, পারফরম্যান্স বোনাস এবং ক্যারিয়ারে দ্রুত পদোন্নতির সুযোগ।</p>",
+    "deadline": "2026-11-26T23:59:59.000Z",
+    "applyLink": "https://waltonbd.com/career",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "সেলস ও প্লাজা অফিসার",
+        "count": 120,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["ওয়ালটন", "Walton", "বেসরকারি চাকরি", "সেলস অফিসার"],
+    "status": "published",
+    "publishedAt": "2026-10-12T07:00:00.000Z",
+    "createdAt": "2026-10-12T07:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "pran-rfl-territory-manager-2026",
+    "title": "প্রাণ-আরএফএল গ্রুপ (PRAN-RFL) টেরিটরি সেলস ম্যানেজার নিয়োগ ২০২৬",
+    "slug": "pran-rfl-territory-manager-2026",
+    "category": "private",
+    "content": "<h3>প্রাণ-আরএফএল গ্রুপে উজ্জ্বল ক্যারিয়ার</h3><p>দেশের শীর্ষস্থানীয় বহুজাতিক খাদ্য ও পণ্য উৎপাদনকারী প্রতিষ্ঠান প্রাণ-আরএফএল গ্রুপে দেশের বিভিন্ন বিভাগে সেলস ও ডিস্ট্রিবিউশন তত্ত্বাবধানের জন্য টেরিটরি সেলস ম্যানেজার নিয়োগ বিজ্ঞপ্তি প্রকাশ করা হয়েছে।</p>",
+    "deadline": "2026-11-24T23:59:59.000Z",
+    "applyLink": "https://pranrflgroup.com/career",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "টেরিটরি সেলস ম্যানেজার (TSM)",
+        "count": 85,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["প্রাণ আরএফএল", "PRAN", "RFL", "বেসরকারি চাকরি"],
+    "status": "published",
+    "publishedAt": "2026-10-12T05:00:00.000Z",
+    "createdAt": "2026-10-12T05:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "square-pharma-medical-promotion-officer-2026",
+    "title": "স্কয়ার ফার্মাসিউটিক্যালস (Square Pharma) মেডিকেল প্রমোশন অফিসার (MPO) নিয়োগ",
+    "slug": "square-pharma-medical-promotion-officer-2026",
+    "category": "pharma",
+    "content": "<h3>স্কয়ার ফার্মাসিউটিক্যালস লিমিটেড</h3><p>বাংলাদেশের ওষুধ শিল্পের পথিকৃৎ প্রতিষ্ঠান স্কয়ার ফার্মাসিউটিক্যালস লিমিটেডে সরাসরি ওয়াক-ইন ইন্টারভিউয়ের মাধ্যমে মেডিকেল প্রমোশন অফিসার (MPO) পদে নিয়োগ প্রদান করা হবে।</p><h4>শিক্ষাগত যোগ্যতা:</h4><p>যেকোনো স্বীকৃত বিশ্ববিদ্যালয় হতে যেকোনো বিষয়ে স্নাতক পাস (এইচএসসি পর্যন্ত বিজ্ঞান বিভাগ অগ্রাধিকার)। সুদর্শন, স্মার্ট এবং চমৎকার যোগাযোগ দক্ষতা থাকতে হবে।</p><h4>সুযোগ-সুবিধা:</h4><p>আকর্ষণীয় বেতন, টিএ/ডিএ, মোটরসাইকেল সুবিধা, ইনসেন্টিভ, প্রভিডেন্ট ফান্ড ও গ্র্যাচুইটি।</p>",
+    "deadline": "2026-11-27T23:59:59.000Z",
+    "applyLink": "https://www.squarepharma.com.bd/career",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "মেডিকেল প্রমোশন অফিসার (MPO)",
+        "count": 100,
+        "district": "ALL",
+        "districts": ["সকল জেলা"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["স্কয়ার ফার্মা", "Square Pharmaceuticals", "MPO", "ফার্মা চাকরি"],
+    "status": "published",
+    "publishedAt": "2026-10-12T09:00:00.000Z",
+    "createdAt": "2026-10-12T09:00:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  },
+  {
+    "id": "incepta-pharma-qc-officer-2026",
+    "title": "ইনসেপ্টা ফার্মাসিউটিক্যালস (Incepta Pharma) কোয়ালিটি কন্ট্রোল অফিসার নিয়োগ",
+    "slug": "incepta-pharma-qc-officer-2026",
+    "category": "pharma",
+    "content": "<h3>ইনসেপ্টা ফার্মাসিউটিক্যালস লিমিটেড</h3><p>ইনসেপ্টা ফার্মাসিউটিক্যালস লিমিটেডের ধামরাই ও সাভার প্ল্যান্টে কোয়ালিটি কন্ট্রোল (QC) ও কোয়ালিটি অ্যাসুরেন্স (QA) বিভাগে জরুরি ভিত্তিতে অফিসার নিয়োগের বিজ্ঞপ্তি প্রকাশ করা হয়েছে।</p><h4>শিক্ষাগত যোগ্যতা:</h4><p>বি.ফার্ম (B.Pharm) অথবা এম.ফার্ম (M.Pharm) বা রসায়ন/ফলিত রসায়নে মাস্টার্স ডিগ্রি।</p>",
+    "deadline": "2026-11-29T23:59:59.000Z",
+    "applyLink": "https://www.inceptapharma.com/career",
+    "applyServiceEnabled": true,
+    "applicationFee": 0,
+    "serviceCharge": 50,
+    "posts": [
+      {
+        "name": "কোয়ালিটি কন্ট্রোল অফিসার (QC)",
+        "count": 50,
+        "district": "ALL",
+        "districts": ["ঢাকা", "সাভার", "মানিকগঞ্জ", "গাজীপুর"],
+        "applicationFee": 0,
+        "serviceCharge": 50
+      }
+    ],
+    "tags": ["ইনসেপ্টা ফার্মা", "Incepta", "QC Officer", "ফার্মাসিউটিক্যালস জব"],
+    "status": "published",
+    "publishedAt": "2026-10-12T09:30:00.000Z",
+    "createdAt": "2026-10-12T09:30:00.000Z",
+    "updatedAt": "2026-10-12T11:00:00.000Z"
+  }
+]

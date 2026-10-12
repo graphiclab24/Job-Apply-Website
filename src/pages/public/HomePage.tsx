@@ -5,6 +5,7 @@ import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getFeedLatest, FeedJobSummary } from '../../services/feed';
 import { getCached, setCached, precacheJob, prefetchJobDetail } from '../../services/cache';
+import { DEFAULT_FEED_JOBS } from '../../data/defaultJobs';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
@@ -13,32 +14,20 @@ import { ArrowRight, Calendar, Sparkles, Award } from 'lucide-react';
 export const HomePage: React.FC = () => {
   const [jobs, setJobs] = useState<FeedJobSummary[]>(() => {
     const cached = getCached<FeedJobSummary[]>('feed_latest');
-    if (cached && cached.length > 0) return cached;
-    const page1 = getCached<any[]>('jobs_page_1');
-    if (page1 && page1.length > 0) {
-      return page1.map((j) => ({
-        id: j.id,
-        title: j.title,
-        slug: j.slug || j.id,
-        category: j.category,
-        deadline: j.deadline,
-        publishedAt: j.publishedAt,
-        applyServiceEnabled: Boolean(j.applyServiceEnabled),
-      }));
-    }
-    return [];
+    if (cached && cached.length >= 8) return cached;
+    return DEFAULT_FEED_JOBS;
   });
   const [examNotices, setExamNotices] = useState<ExamNotice[]>(() => {
     return getCached<ExamNotice[]>('exams_home') || [];
   });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [loading, setLoading] = useState(() => jobs.length === 0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     // 1. Fetch Feed Jobs with ultra-fast SWR (Edge API / RAM Cache ~2ms)
-    getFeedLatest()
+    getFeedLatest(true)
       .then((feedPosts) => {
         if (isMounted && feedPosts && feedPosts.length > 0) {
           setJobs(feedPosts);
@@ -96,7 +85,14 @@ export const HomePage: React.FC = () => {
   const filteredJobs =
     selectedCategory === 'all'
       ? jobs.slice(0, 9)
-      : jobs.filter((j) => j.category === selectedCategory).slice(0, 9);
+      : jobs
+          .filter((j) => {
+            if (selectedCategory === 'ngo') {
+              return j.category === 'ngo' || j.category === 'brac';
+            }
+            return j.category === selectedCategory;
+          })
+          .slice(0, 9);
 
   return (
     <div className="space-y-10 pb-12">

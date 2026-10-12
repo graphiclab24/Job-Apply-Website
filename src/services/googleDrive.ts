@@ -179,11 +179,22 @@ export interface DriveStorageInfo {
   limit?: string;
   usage?: string;
   usageInDrive?: string;
+  usageFormatted?: string;
+  limitFormatted?: string;
+  usagePercent?: number;
   user?: {
     displayName?: string;
     emailAddress?: string;
     photoLink?: string;
   };
+}
+
+function formatBytes(bytes: number): string {
+  if (isNaN(bytes) || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 /**
@@ -209,10 +220,17 @@ export async function getDriveStorageInfo(): Promise<DriveStorageInfo> {
   }
 
   const data = await res.json();
+  const usageNum = Number(data.storageQuota?.usage || 0);
+  const limitNum = Number(data.storageQuota?.limit || 0);
+  const usagePercent = limitNum > 0 ? Math.round((usageNum / limitNum) * 100) : 0;
+
   return {
     limit: data.storageQuota?.limit,
     usage: data.storageQuota?.usage,
     usageInDrive: data.storageQuota?.usageInDrive,
+    usageFormatted: formatBytes(usageNum),
+    limitFormatted: limitNum > 0 ? formatBytes(limitNum) : 'অসীম (Unlimited)',
+    usagePercent,
     user: data.user,
   };
 }
@@ -225,7 +243,9 @@ export interface DriveFileItem {
   webContentLink?: string;
   thumbnailLink?: string;
   size?: string;
+  sizeFormatted?: string;
   modifiedTime?: string;
+  createdTime?: string;
 }
 
 /**
@@ -276,7 +296,11 @@ export async function listDriveFiles(options?: {
   }
 
   const data = await res.json();
-  return data.files || [];
+  return (data.files || []).map((f: any) => ({
+    ...f,
+    sizeFormatted: f.size ? formatBytes(Number(f.size)) : '—',
+    createdTime: f.modifiedTime,
+  }));
 }
 
 /**

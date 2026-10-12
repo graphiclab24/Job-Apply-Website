@@ -100,6 +100,12 @@ export function repairCorruptedJobHtml(text: string): string {
   // 5. Ensure all <img> tags have loading="lazy" decoding="async"
   cleaned = cleaned.replace(/<img(?![^>]*loading=)([^>]*?)>/gi, '<img loading="lazy" decoding="async"$1>');
 
+  // 6. Ensure all <table> elements are wrapped in .table-responsive-wrapper for flawless mobile rendering
+  cleaned = cleaned.replace(
+    /(?:<div\s+class=["\x27]table-responsive-wrapper["\x27]>\s*)?(<table\b[\s\S]*?<\/table>)(?:\s*<\/div>)?/gi,
+    '<div class="table-responsive-wrapper">$1</div>'
+  );
+
   return cleaned;
 }
 

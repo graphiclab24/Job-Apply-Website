@@ -10,23 +10,44 @@ import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
-import { Plus, Edit, Trash2, ExternalLink, Calendar, Send } from 'lucide-react';
+import { Plus, Edit, Trash2, ExternalLink, Calendar, Send, CloudUpload, RefreshCw } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     return getCached<JobCircular[]>('admin_jobs') || [];
   });
   const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('admin_jobs'));
+  const [syncingR2, setSyncingR2] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { success, error } = useToast();
 
-  const fetchJobs = async () => {
+  const handleSyncR2 = async () => {
+    setSyncingR2(true);
     try {
+      const res = await fetch('/api/admin/jobs/sync-r2', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        success(`Cloudflare R2-তে ${data.count}টি সার্কুলার সফলভাবে সিঙ্ক হয়েছে!`);
+        fetchJobs();
+      } else {
+        error(data.error || 'R2 সিঙ্ক ব্যর্থ হয়েছে');
+      }
+    } catch (err: any) {
+      error('R2 সার্ভারের সাথে কানেক্ট করা যায়নি');
+    } finally {
+      setSyncingR2(false);
+    }
+  };
+
+  const fetchJobs = async () => {
+    setLoading(true);
+    try {
+      // 1. Try resilient server API route (returns cached or stored jobs even if quota is 0)
       try {
         const res = await fetch('/api/jobs?limit=50');
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data?.jobs)) {
+          if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
             setJobs(data.jobs);
             setCached('admin_jobs', data.jobs);
             data.jobs.forEach(precacheJob);
@@ -36,13 +57,43 @@ export const AdminJobsListPage: React.FC = () => {
         }
       } catch {}
 
-      const snap = await getDocs(collection(db, 'jobs'));
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobCircular));
-      setJobs(list);
-      setCached('admin_jobs', list);
-      list.forEach(precacheJob);
+      // 1.5. Try direct Cloudflare R2 public URL (100% uptime, quota-immune)
+      try {
+        const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+        if (r2Res.ok) {
+          const r2Data = await r2Res.json();
+          if (Array.isArray(r2Data) && r2Data.length > 0) {
+            setJobs(r2Data);
+            setCached('admin_jobs', r2Data);
+            r2Data.forEach(precacheJob);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {}
+
+      // 2. Try client-side Firestore SDK
+      try {
+        const snap = await getDocs(collection(db, 'jobs'));
+        if (!snap.empty) {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobCircular));
+          setJobs(list);
+          setCached('admin_jobs', list);
+          list.forEach(precacheJob);
+          setLoading(false);
+          return;
+        }
+      } catch (fbErr: any) {
+        console.warn('Direct Firestore read notice:', fbErr?.message);
+      }
+
+      // 3. Fallback to cached jobs
+      const cached = getCached<JobCircular[]>('admin_jobs');
+      if (cached && cached.length > 0) {
+        setJobs(cached);
+      }
     } catch (err) {
-      error('বিজ্ঞপ্তি লোড করতে সমস্যা হয়েছে');
+      console.warn('Jobs fetch catch notice:', err);
     } finally {
       setLoading(false);
     }
@@ -59,20 +110,24 @@ export const AdminJobsListPage: React.FC = () => {
 
     setDeletingId(id);
     try {
-      await deleteDoc(doc(db, 'jobs', id));
+      try {
+        await deleteDoc(doc(db, 'jobs', id));
+      } catch (fbErr) {
+        console.warn('Firestore delete notice:', fbErr);
+      }
       try {
         await deleteFile(getFileId.cover(id));
       } catch (e) {
         // Non-fatal
       }
-      await syncJobToFeed(id, {}, 'delete');
+      await syncJobToFeed(id, {}, 'delete').catch(() => {});
       invalidateCache('admin_jobs');
       invalidateCache('feed_');
       invalidateCache('jobs_');
       fetch('/api/feed/purge-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, isDelete: true }),
       }).catch(() => {});
       setJobs((prev) => prev.filter((j) => j.id !== id));
       success('বিজ্ঞপ্তিটি সফলভাবে মুছে ফেলা হয়েছে');
@@ -94,9 +149,21 @@ export const AdminJobsListPage: React.FC = () => {
           </p>
         </div>
 
-        <Link to="/admin/jobs/new">
-          <Button icon={<Plus className="w-4 h-4" />}>নতুন সার্কুলার যোগ করুন</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncR2}
+            disabled={syncingR2}
+            icon={syncingR2 ? <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" /> : <CloudUpload className="w-4 h-4 text-emerald-600" />}
+          >
+            {syncingR2 ? 'R2 সিঙ্ক হচ্ছে...' : 'R2 ক্লাউডে সিঙ্ক করুন'}
+          </Button>
+
+          <Link to="/admin/jobs/new">
+            <Button icon={<Plus className="w-4 h-4" />}>নতুন সার্কুলার যোগ করুন</Button>
+          </Link>
+        </div>
       </div>
 
       {loading ? (

@@ -63,26 +63,36 @@ export const AdminUrlShortenerPage: React.FC = () => {
   const fetchLinks = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'short_links'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
+      // 1. First try superfast resilient backend API endpoint
+      const res = await fetch('/api/shortener/links');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.links)) {
+          setLinks(data.links);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to client Firestore
+    }
+
+    try {
+      // 2. Client-side Firestore fallback
+      const snap = await getDocs(collection(db, 'short_links'));
       const items: ShortLink[] = [];
       snap.forEach((d) => {
         items.push({ id: d.id, ...(d.data() as any) });
       });
+      // Sort desc
+      items.sort((a, b) => {
+        const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+        const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+        return tB - tA;
+      });
       setLinks(items);
-    } catch (err: any) {
-      console.warn('Short links fetch note:', err);
-      // Fallback query if index is building
-      try {
-        const snap = await getDocs(collection(db, 'short_links'));
-        const items: ShortLink[] = [];
-        snap.forEach((d) => {
-          items.push({ id: d.id, ...(d.data() as any) });
-        });
-        setLinks(items);
-      } catch (e: any) {
-        toastError('শর্ট লিংকগুলো লোড করতে সমস্যা হয়েছে');
-      }
+    } catch (e: any) {
+      console.warn('Short links fallback notice:', e);
     } finally {
       setLoading(false);
     }
@@ -162,7 +172,21 @@ export const AdminUrlShortenerPage: React.FC = () => {
         createdAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'short_links', code), newDoc);
+      // Try API first
+      try {
+        await fetch('/api/shortener/links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: code,
+            originalUrl: cleanUrl,
+            title: title.trim() || undefined,
+          }),
+        });
+      } catch {
+        // Fallback to Firestore SDK directly
+        await setDoc(doc(db, 'short_links', code), newDoc);
+      }
 
       setLinks((prev) => [
         { ...newDoc, createdAt: new Date() },
@@ -200,7 +224,13 @@ export const AdminUrlShortenerPage: React.FC = () => {
     }
 
     try {
-      await deleteDoc(doc(db, 'short_links', code));
+      try {
+        await fetch(`/api/shortener/links/${encodeURIComponent(code)}`, {
+          method: 'DELETE',
+        });
+      } catch {
+        await deleteDoc(doc(db, 'short_links', code));
+      }
       setLinks((prev) => prev.filter((l) => l.id !== code));
       success('শর্ট লিংক মুছে ফেলা হয়েছে');
     } catch (err: any) {
@@ -417,8 +447,8 @@ export const AdminUrlShortenerPage: React.FC = () => {
             <p className="text-xs">কোনো শর্ট লিংক পাওয়া যায়নি</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
+          <div className="overflow-x-auto touch-pan-x">
+            <table className="w-full min-w-[540px] text-xs text-left">
               <thead className="bg-gray-50 text-gray-700 uppercase tracking-wider font-semibold border-b border-gray-100">
                 <tr>
                   <th className="p-3.5">শর্ট লিংক ও টাইটেল</th>
