@@ -412,6 +412,9 @@ export const AdminJobFormPage: React.FC = () => {
             count: Number(p.count) || 1,
             district: p.district || 'ALL',
           };
+          if (Array.isArray(p.districts) && p.districts.length > 0) {
+            item.districts = p.districts;
+          }
           if (p.applicationFee !== undefined && p.applicationFee !== null && !isNaN(p.applicationFee)) {
             item.applicationFee = Number(p.applicationFee);
           }

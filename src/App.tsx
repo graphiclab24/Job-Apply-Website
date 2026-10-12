@@ -43,6 +43,9 @@ const AdminApplicationsPage = lazy(() => import('./pages/admin/AdminApplications
 const AdminPaymentSettingsPage = lazy(() => import('./pages/admin/AdminPaymentSettingsPage').then((m) => ({ default: m.AdminPaymentSettingsPage })));
 const AdminExportPage = lazy(() => import('./pages/admin/AdminExportPage').then((m) => ({ default: m.AdminExportPage })));
 const AdminGoogleDrivePage = lazy(() => import('./pages/admin/AdminGoogleDrivePage').then((m) => ({ default: m.AdminGoogleDrivePage })));
+const AdminUrlShortenerPage = lazy(() => import('./pages/admin/AdminUrlShortenerPage').then((m) => ({ default: m.AdminUrlShortenerPage })));
+const AdminPdfConverterPage = lazy(() => import('./pages/admin/AdminPdfConverterPage').then((m) => ({ default: m.AdminPdfConverterPage })));
+const ShortLinkRedirectPage = lazy(() => import('./pages/public/ShortLinkRedirectPage').then((m) => ({ default: m.ShortLinkRedirectPage })));
 
 // Lightweight Fast Skeleton Fallback
 const PageLoadingFallback: React.FC = () => (
@@ -74,6 +77,7 @@ export default function App() {
                   {/* SEO Endpoints (Raw XML / Robots / Google Verification) */}
                   <Route path="/sitemap.xml" element={<SitemapView />} />
                   <Route path="/robots.txt" element={<RobotsView />} />
+                  <Route path="/s/:code" element={<ShortLinkRedirectPage />} />
                   <Route
                     path="/googlec771a2a1a147ff4a.html"
                     element={<pre style={{ margin: 0, padding: '20px' }}>google-site-verification: googlec771a2a1a147ff4a.html</pre>}
@@ -116,6 +120,8 @@ export default function App() {
                     <Route path="settings/payment" element={<AdminPaymentSettingsPage />} />
                     <Route path="storage" element={<AdminGoogleDrivePage />} />
                     <Route path="export" element={<AdminExportPage />} />
+                    <Route path="shortener" element={<AdminUrlShortenerPage />} />
+                    <Route path="pdf-converter" element={<AdminPdfConverterPage />} />
                   </Route>
 
                   {/* 404 Route */}

@@ -439,7 +439,11 @@ export const JobDetailsPage: React.FC = () => {
                         <td className="p-2.5 font-bold text-gray-800">{p.name}</td>
                         <td className="p-2.5 text-gray-600">{p.count} জন</td>
                         <td className="p-2.5 text-emerald-700 font-medium">
-                          {p.district === 'ALL' ? 'সারাদেশ (সকল জেলা)' : p.district}
+                          {p.district === 'ALL' || (Array.isArray(p.districts) && p.districts.includes('ALL'))
+                            ? 'সারাদেশ (সকল জেলা)'
+                            : p.districts && p.districts.length > 0
+                            ? p.districts.join(', ')
+                            : p.district || 'সারাদেশ (সকল জেলা)'}
                         </td>
                         <td className="p-2.5 text-right font-bold text-gray-900">
                           ৳{postTotal}
@@ -672,8 +676,8 @@ export const JobDetailsPage: React.FC = () => {
                 ? 'এই সার্কুলারের ডেডলাইন অতিক্রান্ত হয়েছে, ফলে আর আবেদন করা যাবে না।'
                 : job.applyServiceEnabled
                 ? job.posts && job.posts.length > 0
-                  ? `পদভেদে সরকারি ফি + ১০ টাকা সার্ভিস চার্জ (বিস্তারিত উপরের টেবিলে দেখুন)`
-                  : `টেলিটক ফি: ৳${job.applicationFee || 0} + সার্ভিস চার্জ: ৳${job.serviceCharge || 10} (মোট ৳${(job.applicationFee || 0) + (job.serviceCharge || 10)})`
+                  ? 'পদভেদে সরকারি ফি + সার্ভিস চার্জ (বিস্তারিত উপরের টেবিলে দেখুন)'
+                  : `টেলিটক ফি: ৳${job.applicationFee || 0} + সার্ভিস চার্জ: ৳${job.serviceCharge !== undefined ? job.serviceCharge : 10} (মোট ৳${(job.applicationFee || 0) + (job.serviceCharge !== undefined ? job.serviceCharge : 10)})`
                 : 'বিজ্ঞপ্তিতে দেওয়া অফিশিয়াল লিংক ব্যবহার করে আবেদন করুন।'}
             </p>
           </div>

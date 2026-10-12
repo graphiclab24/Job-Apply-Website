@@ -217,13 +217,41 @@ export const ApplyJobPage: React.FC = () => {
             >
               <option value="">-- পদ নির্বাচন করুন --</option>
               {job.posts?.map((p, idx) => {
-                const isEligible =
-                  p.district === 'ALL' ||
-                  p.district.toLowerCase() === candidateDistrict.toLowerCase();
+                // Check eligibility for single or multiple allowed districts
+                const isEligible = (() => {
+                  if (!candidateDistrict) return true;
+                  if (p.district === 'ALL' || (Array.isArray(p.districts) && p.districts.includes('ALL'))) return true;
+
+                  const target = candidateDistrict.trim().toLowerCase();
+
+                  // 1. Array check
+                  if (Array.isArray(p.districts) && p.districts.length > 0) {
+                    return p.districts.some((d: string) => {
+                      const norm = d.trim().toLowerCase();
+                      return norm === target || target.includes(norm) || norm.includes(target);
+                    });
+                  }
+
+                  // 2. Comma or slash separated string check
+                  if (p.district) {
+                    const splitList = p.district.split(/[,/|]+/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+                    if (splitList.includes('all') || splitList.includes('সারাদেশ')) return true;
+                    return splitList.some((d: string) => d === target || target.includes(d) || d.includes(target));
+                  }
+
+                  return true;
+                })();
+
+                const districtDisplay =
+                  p.district === 'ALL' || (Array.isArray(p.districts) && p.districts.includes('ALL'))
+                    ? 'সারাদেশ'
+                    : Array.isArray(p.districts) && p.districts.length > 0
+                    ? `জেলা: ${p.districts.join(', ')}`
+                    : `জেলা: ${p.district}`;
 
                 return (
                   <option key={idx} value={p.name} disabled={!isEligible}>
-                    {p.name} ({p.count} জন) - {p.district === 'ALL' ? 'সারাদেশ' : `জেলা: ${p.district}`}
+                    {p.name} ({p.count} জন) - {districtDisplay}
                     {!isEligible ? ' [আপনার স্থায়ী জেলার জন্য প্রযোজ্য নয়]' : ''}
                   </option>
                 );

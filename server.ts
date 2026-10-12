@@ -3,7 +3,7 @@ import compression from 'compression';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
-import { doc, getDoc, getDocs, collection, query, where, limit, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from './src/services/firebase';
 import { formatJobContent, repairCorruptedJobHtml, purgeCompetitorBranding } from './src/utils/formatJobContent';
 import { extractJobLocally } from './src/utils/localJobExtractor';
@@ -217,6 +217,36 @@ app.get('/api/jobs/:slug', async (req: Request, res: Response) => {
     console.warn('Server job lookup notice:', err?.message || err);
     return res.status(500).json({ error: 'Failed to retrieve job' });
   }
+});
+
+/**
+ * 0-Cost High-Speed URL Shortener Redirection
+ * Redirects visitors instantly via HTTP 302 while tracking click counts in the background
+ */
+app.get('/s/:code', async (req: Request, res: Response) => {
+  const { code } = req.params;
+  if (!code) return res.redirect('/');
+
+  const cleanCode = code.trim().toLowerCase();
+  try {
+    const snap = await getDoc(doc(db, 'short_links', cleanCode));
+    if (snap.exists()) {
+      const data = snap.data();
+      const targetUrl = data.originalUrl || '/';
+
+      // Increment click count asynchronously without slowing down redirect
+      updateDoc(doc(db, 'short_links', cleanCode), {
+        clicks: increment(1),
+        lastClickedAt: serverTimestamp(),
+      }).catch(() => {});
+
+      return res.redirect(targetUrl);
+    }
+  } catch (err) {
+    console.warn('Short link redirect lookup notice:', err);
+  }
+
+  return res.redirect('/');
 });
 
 /**
