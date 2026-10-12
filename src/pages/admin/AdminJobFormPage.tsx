@@ -477,6 +477,11 @@ export const AdminJobFormPage: React.FC = () => {
       });
       invalidateCache('jobs_');
       invalidateCache('feed_');
+      fetch('/api/feed/purge-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: jobData.slug, id: jobId }),
+      }).catch(() => {});
 
       navigate('/admin/jobs');
     } catch (err: any) {

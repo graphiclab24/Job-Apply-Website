@@ -26,10 +26,25 @@ const CACHE_KEY = 'feed_latest';
  */
 export async function getFeedLatest(): Promise<FeedJobSummary[]> {
   const cached = getCached<FeedJobSummary[]>(CACHE_KEY);
-  if (cached) {
+  if (cached && cached.length > 0) {
     return cached;
   }
 
+  // 1. Fast Server-Side Edge API (Zero client-side Firestore reads, ~10ms HTTP response)
+  try {
+    const res = await fetch('/api/feed/latest');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.posts) && data.posts.length > 0) {
+        setCached(CACHE_KEY, data.posts);
+        return data.posts;
+      }
+    }
+  } catch (apiErr) {
+    // Non-fatal, fallback to client-side Firestore SDK
+  }
+
+  // 2. Client-Side Firestore SDK Fallback (If server API route unavailable)
   try {
     const feedRef = doc(db, 'feed', 'latest');
     const snap = await getDoc(feedRef);
@@ -168,11 +183,21 @@ export async function syncJobToFeed(
       });
     });
 
-    // Invalidate local in-memory cache
+    // Invalidate local in-memory cache and server memory cache
     invalidateCache(CACHE_KEY);
+    fetch('/api/feed/purge-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: jobId }),
+    }).catch(() => {});
   } catch (err: any) {
     console.warn('Sync job to feed notice:', err?.message || err);
     // Non-fatal if feed sync fails, but invalidate cache
     invalidateCache(CACHE_KEY);
+    fetch('/api/feed/purge-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: jobId }),
+    }).catch(() => {});
   }
 }

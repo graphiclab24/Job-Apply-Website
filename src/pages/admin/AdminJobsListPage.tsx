@@ -4,7 +4,7 @@ import { collection, getDocs, deleteDoc, doc, orderBy, query } from 'firebase/fi
 import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import { deleteFile, getFileId } from '../../services/files';
 import { syncJobToFeed } from '../../services/feed';
-import { getCached, setCached, precacheJob } from '../../services/cache';
+import { getCached, setCached, precacheJob, invalidateCache } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
@@ -22,6 +22,20 @@ export const AdminJobsListPage: React.FC = () => {
 
   const fetchJobs = async () => {
     try {
+      try {
+        const res = await fetch('/api/jobs?limit=50');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data?.jobs)) {
+            setJobs(data.jobs);
+            setCached('admin_jobs', data.jobs);
+            data.jobs.forEach(precacheJob);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {}
+
       const snap = await getDocs(collection(db, 'jobs'));
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobCircular));
       setJobs(list);
@@ -52,6 +66,14 @@ export const AdminJobsListPage: React.FC = () => {
         // Non-fatal
       }
       await syncJobToFeed(id, {}, 'delete');
+      invalidateCache('admin_jobs');
+      invalidateCache('feed_');
+      invalidateCache('jobs_');
+      fetch('/api/feed/purge-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).catch(() => {});
       setJobs((prev) => prev.filter((j) => j.id !== id));
       success('বিজ্ঞপ্তিটি সফলভাবে মুছে ফেলা হয়েছে');
     } catch (err) {

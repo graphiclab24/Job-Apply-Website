@@ -12,50 +12,56 @@ import { ArrowRight, Calendar, Sparkles, Award } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const [jobs, setJobs] = useState<FeedJobSummary[]>(() => {
-    return getCached<FeedJobSummary[]>('feed_latest') || [];
+    const cached = getCached<FeedJobSummary[]>('feed_latest');
+    if (cached && cached.length > 0) return cached;
+    const page1 = getCached<any[]>('jobs_page_1');
+    if (page1 && page1.length > 0) {
+      return page1.map((j) => ({
+        id: j.id,
+        title: j.title,
+        slug: j.slug || j.id,
+        category: j.category,
+        deadline: j.deadline,
+        publishedAt: j.publishedAt,
+        applyServiceEnabled: Boolean(j.applyServiceEnabled),
+      }));
+    }
+    return [];
   });
   const [examNotices, setExamNotices] = useState<ExamNotice[]>(() => {
     return getCached<ExamNotice[]>('exams_home') || [];
   });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [loading, setLoading] = useState(() => !getCached<FeedJobSummary[]>('feed_latest'));
+  const [loading, setLoading] = useState(() => jobs.length === 0);
 
   useEffect(() => {
     let isMounted = true;
-    const fetchData = async () => {
-      try {
-        const cachedExams = getCached<ExamNotice[]>('exams_home');
-        const examPromise = cachedExams
-          ? Promise.resolve(cachedExams)
-          : getDocs(query(collection(db, 'exams'), limit(4)))
-              .then((examSnap) => {
-                const exams = examSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ExamNotice));
-                setCached('exams_home', exams);
-                return exams;
-              })
-              .catch(() => [] as ExamNotice[]);
 
-        const [feedPosts, exams] = await Promise.all([
-          getFeedLatest().catch(() => [] as FeedJobSummary[]),
-          examPromise,
-        ]);
+    // 1. Fetch Feed Jobs with ultra-fast SWR (Edge API / RAM Cache ~2ms)
+    getFeedLatest()
+      .then((feedPosts) => {
+        if (isMounted && feedPosts && feedPosts.length > 0) {
+          setJobs(feedPosts);
+          feedPosts.forEach(precacheJob);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
 
-        if (isMounted) {
-          setJobs(feedPosts || []);
-          setExamNotices(exams || []);
-          if (Array.isArray(feedPosts)) {
-            feedPosts.forEach(precacheJob);
-          }
-        }
-      } catch (err) {
-        // Silently handled
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-    fetchData();
+    // 2. Fetch Exams non-blockingly in the background (never freezes job rendering)
+    const cachedExams = getCached<ExamNotice[]>('exams_home');
+    if (!cachedExams || cachedExams.length === 0) {
+      getDocs(query(collection(db, 'exams'), limit(4)))
+        .then((examSnap) => {
+          const exams = examSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ExamNotice));
+          setCached('exams_home', exams);
+          if (isMounted) setExamNotices(exams);
+        })
+        .catch(() => {});
+    }
+
     return () => {
       isMounted = false;
     };

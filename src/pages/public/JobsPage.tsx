@@ -21,9 +21,13 @@ const ITEMS_PER_PAGE = 20;
 
 export const JobsPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
-    return getCached<JobCircular[]>('jobs_page_1') || [];
+    const page1 = getCached<JobCircular[]>('jobs_page_1');
+    if (page1 && page1.length > 0) return page1;
+    const feed = getCached<any[]>('feed_latest');
+    if (feed && feed.length > 0) return feed as JobCircular[];
+    return [];
   });
-  const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('jobs_page_1'));
+  const [loading, setLoading] = useState(() => jobs.length === 0);
   const [searchTerm, setSearchTerm] = useState(() => {
     return new URLSearchParams(window.location.search).get('search') || '';
   });
@@ -35,16 +39,43 @@ export const JobsPage: React.FC = () => {
   const pageCursorMap = useRef<Map<number, DocumentSnapshot>>(new Map());
 
   const fetchPage = async (page: number) => {
-    setLoading(true);
-    const cacheKey = `jobs_page_${page}`;
+    const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
     const cached = getCached<JobCircular[]>(cacheKey);
 
-    if (cached) {
+    if (cached && cached.length > 0) {
       setJobs(cached);
       setLoading(false);
       return;
     }
 
+    if (jobs.length === 0) {
+      setLoading(true);
+    }
+
+    // Step 1: Ultra-fast Server-Side Edge Endpoint (~2ms from RAM)
+    try {
+      const apiRes = await fetch(
+        `/api/jobs?page=${page}&limit=${ITEMS_PER_PAGE}&category=${encodeURIComponent(categoryFilter)}&search=${encodeURIComponent(searchTerm)}`
+      );
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (Array.isArray(data?.jobs)) {
+          setJobs(data.jobs);
+          setHasMore(Boolean(data.hasMore));
+          setCached(cacheKey, data.jobs);
+          if (page === 1 && categoryFilter === 'all' && !searchTerm) {
+            setCached('jobs_page_1', data.jobs);
+          }
+          data.jobs.forEach(precacheJob);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to client-side Firestore SDK below
+    }
+
+    // Step 2: Client-side Firestore SDK Fallback (If offline or API unavailable)
     try {
       let q;
       if (page === 1) {
@@ -97,6 +128,9 @@ export const JobsPage: React.FC = () => {
       setHasMore(list.length === ITEMS_PER_PAGE);
       if (list.length > 0) {
         setCached(cacheKey, list);
+        if (page === 1 && categoryFilter === 'all' && !searchTerm) {
+          setCached('jobs_page_1', list);
+        }
         list.forEach(precacheJob);
       }
       setJobs(list);

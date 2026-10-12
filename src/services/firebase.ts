@@ -5,42 +5,88 @@ import {
   getFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
+  memoryLocalCache,
 } from 'firebase/firestore';
 import defaultAppletConfig from '../../firebase-applet-config.json';
 
-// Support both .env (VITE_FIREBASE_*) and provisioned firebase-applet-config.json
+// Support both Vite browser (import.meta.env) and Node.js server (process.env)
+const getEnvVar = (key: string) => {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.[key]) {
+      return (import.meta as any).env[key];
+    }
+  } catch {}
+  try {
+    if (typeof process !== 'undefined' && process.env?.[key]) {
+      return process.env[key];
+    }
+  } catch {}
+  return undefined;
+};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || defaultAppletConfig.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || defaultAppletConfig.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultAppletConfig.projectId,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultAppletConfig.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || defaultAppletConfig.appId,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || (defaultAppletConfig as any).firestoreDatabaseId,
+  apiKey: getEnvVar('VITE_FIREBASE_API_KEY') || defaultAppletConfig.apiKey,
+  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN') || defaultAppletConfig.authDomain,
+  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID') || defaultAppletConfig.projectId,
+  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID') || defaultAppletConfig.messagingSenderId,
+  appId: getEnvVar('VITE_FIREBASE_APP_ID') || defaultAppletConfig.appId,
+  firestoreDatabaseId: getEnvVar('VITE_FIREBASE_DATABASE_ID') || (defaultAppletConfig as any).firestoreDatabaseId,
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 const databaseId =
-  import.meta.env.VITE_FIREBASE_DATABASE_ID ||
+  getEnvVar('VITE_FIREBASE_DATABASE_ID') ||
   (defaultAppletConfig as any).firestoreDatabaseId;
+
+// Safely determine whether IndexedDB and LocalStorage are truly supported in current runtime
+const canUsePersistentCache = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (!window.localStorage || !window.indexedDB) return false;
+    const testKey = '__fb_storage_check__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const getCacheSettings = () => {
+  if (canUsePersistentCache()) {
+    try {
+      return {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        experimentalAutoDetectLongPolling: true,
+      };
+    } catch {
+      return {
+        localCache: memoryLocalCache(),
+        experimentalAutoDetectLongPolling: true,
+      };
+    }
+  }
+  return {
+    localCache: memoryLocalCache(),
+    experimentalAutoDetectLongPolling: true,
+  };
+};
 
 let firestoreInstance;
 try {
-  const cacheSettings = {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    experimentalAutoDetectLongPolling: true,
-  };
+  const cacheSettings = getCacheSettings();
   firestoreInstance = databaseId
     ? initializeFirestore(app, cacheSettings, databaseId)
     : initializeFirestore(app, cacheSettings);
 } catch {
-  // If already initialized or persistent cache unsupported
+  // If already initialized or fallback needed
   try {
     firestoreInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
   } catch {
     firestoreInstance = databaseId
-      ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, databaseId)
-      : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      ? initializeFirestore(app, { localCache: memoryLocalCache(), experimentalAutoDetectLongPolling: true }, databaseId)
+      : initializeFirestore(app, { localCache: memoryLocalCache(), experimentalAutoDetectLongPolling: true });
   }
 }
 
