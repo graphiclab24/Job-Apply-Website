@@ -26,17 +26,21 @@ const databaseId =
 
 let firestoreInstance;
 try {
+  const cacheSettings = {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    experimentalAutoDetectLongPolling: true,
+  };
   firestoreInstance = databaseId
-    ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, databaseId)
-    : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+    ? initializeFirestore(app, cacheSettings, databaseId)
+    : initializeFirestore(app, cacheSettings);
 } catch {
-  // If already initialized or fallback
+  // If already initialized or persistent cache unsupported
   try {
     firestoreInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
   } catch {
     firestoreInstance = databaseId
-      ? initializeFirestore(app, {}, databaseId)
-      : initializeFirestore(app, {});
+      ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, databaseId)
+      : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
   }
 }
 

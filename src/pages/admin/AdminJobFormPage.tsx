@@ -19,6 +19,7 @@ import { Spinner } from '../../components/common/Spinner';
 import { RichTextEditor } from '../../components/common/RichTextEditor';
 import { JobPostsTableSection } from '../../components/admin/JobPostsTableSection';
 import { DrivePickerButton } from '../../components/drive/DrivePickerButton';
+import { isDriveConnected, uploadJobImageToDrive } from '../../services/googleDrive';
 import { generateSlug } from '../../utils/slugify';
 import { extractJobLocally } from '../../utils/localJobExtractor';
 import { useToast } from '../../components/common/Toast';
@@ -41,6 +42,10 @@ import {
   ChevronUp,
   Wand2,
   FileText,
+  Trash2,
+  Layers,
+  Plus,
+  Check,
 } from 'lucide-react';
 
 export const AdminJobFormPage: React.FC = () => {
@@ -69,6 +74,9 @@ export const AdminJobFormPage: React.FC = () => {
   const [coverPreview, setCoverPreview] = useState<string>('');
   const [coverUploading, setCoverUploading] = useState(false);
   const [circularLink, setCircularLink] = useState('');
+  const [circularImages, setCircularImages] = useState<string[]>([]);
+  const [uploadingMultiImages, setUploadingMultiImages] = useState(false);
+  const [multiUploadProgress, setMultiUploadProgress] = useState('');
   const [posts, setPosts] = useState<JobPostItem[]>([{ name: '', count: 1, district: 'ALL' }]);
 
   // SEO & Social Optimization States
@@ -204,6 +212,9 @@ export const AdminJobFormPage: React.FC = () => {
           setApplicationFee(data.applicationFee || 0);
           setServiceCharge(data.serviceCharge || 0);
           setCircularLink(data.circularLink || data.circularFile || '');
+          if (Array.isArray(data.circularImages)) {
+            setCircularImages(data.circularImages);
+          }
           setPosts(data.posts || [{ name: '', count: 1, district: 'ALL' }]);
 
           // Load SEO fields
@@ -289,6 +300,74 @@ export const AdminJobFormPage: React.FC = () => {
     }
   };
 
+  const handleMultiImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingMultiImages(true);
+    setMultiUploadProgress(`০/${files.length} ছবি আপলোড শুরু হচ্ছে...`);
+
+    const driveActive = isDriveConnected();
+    const newImageUrls: string[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setMultiUploadProgress(`ছবি (${i + 1}/${files.length}) প্রসেস ও আপলোড হচ্ছে...`);
+
+        if (driveActive) {
+          const res = await uploadJobImageToDrive(
+            file,
+            `${slug || 'job'}_page_${circularImages.length + i + 1}_${file.name}`
+          );
+          newImageUrls.push(res.directImageUrl);
+        } else {
+          // Compress into lightweight WebP/JPEG dataUrl (<150KB)
+          const comp = await compressImageToDataUrl(file, 1200, 1600, 150 * 1024, 'image/jpeg');
+          newImageUrls.push(comp.dataUrl);
+        }
+      }
+
+      setCircularImages((prev) => [...prev, ...newImageUrls]);
+      success(`✨ এক সাথে ${files.length}টি ছবি বিজ্ঞপ্তিতে যুক্ত হয়েছে!`);
+    } catch (err: any) {
+      error(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
+    } finally {
+      setUploadingMultiImages(false);
+      setMultiUploadProgress('');
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleInsertAllImagesToContent = () => {
+    if (circularImages.length === 0) {
+      error('প্রথমে এক বা একাধিক ছবি আপলোড করুন');
+      return;
+    }
+    const htmlSnippets = circularImages
+      .map((url, idx) => {
+        return `<div style="text-align:center; margin:20px 0;">
+  <img src="${url}" alt="${title || 'নিয়োগ বিজ্ঞপ্তি'} - পাতা ${idx + 1}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />
+  <p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ পাতা ${idx + 1} ]</p>
+</div>`;
+      })
+      .join('\n');
+
+    setContent((prev) => (prev ? `${prev.trim()}\n\n${htmlSnippets}` : htmlSnippets));
+    success(`সবগুলো (${circularImages.length}টি) ছবি মূল বিবরণীতে সাজিয়ে বসিয়ে দেওয়া হয়েছে!`);
+  };
+
+  const handleSetImageAsCover = (imgUrl: string) => {
+    setCoverPreview(imgUrl);
+    setHasCover(true);
+    success('এই ছবিটি কভার ইমেজ হিসেবে সেট করা হয়েছে!');
+  };
+
+  const handleRemoveCircularImage = (idxToRemove: number) => {
+    setCircularImages((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+    success('ছবি সরানো হয়েছে');
+  };
+
   const handleAddTag = (newTag: string) => {
     const clean = newTag.trim().replace(/^,+|,+$/g, '');
     if (!clean) return;
@@ -358,6 +437,7 @@ export const AdminJobFormPage: React.FC = () => {
         serviceCharge: Number(serviceCharge) || 0,
         hasCover: Boolean(hasCover),
         circularLink: (circularLink || '').trim() || null,
+        circularImages: circularImages,
         posts: finalPosts,
         // SEO & Social Optimization
         seoTitle: (seoTitle || '').trim() || null,
@@ -723,6 +803,131 @@ export const AdminJobFormPage: React.FC = () => {
             />
           </div>
         </div>
+      </div>
+
+      {/* Multi-Image Upload Section (বিজ্ঞপ্তিতে এক সাথে একাধিক ছবি আপলোড) */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4 shadow-xs">
+        <div className="border-b border-gray-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
+                বিজ্ঞপ্তির মূল পাতা / একাধিক ছবি এক সাথে আপলোড (Multi-Image Upload)
+              </h3>
+              <p className="text-xs text-gray-500">
+                পত্রিকা বা সরকারি বিজ্ঞপ্তির একাধিক পাতা থাকলে এক সাথে সব ছবি সিলেক্ট করে আপলোড করুন
+              </p>
+            </div>
+          </div>
+
+          {circularImages.length > 0 && (
+            <span className="self-start sm:self-auto px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5" />
+              <span>মোট {circularImages.length}টি পাতা যুক্ত আছে</span>
+            </span>
+          )}
+        </div>
+
+        {/* Upload Action Box */}
+        <div className="border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-2xl p-5 text-center transition-colors bg-gray-50/50 hover:bg-emerald-50/20">
+          <label className="cursor-pointer block">
+            <div className="mx-auto w-11 h-11 bg-white rounded-full border border-gray-200 flex items-center justify-center text-emerald-600 mb-2 shadow-xs">
+              <Upload className="w-5 h-5" />
+            </div>
+            <span className="text-sm font-bold text-gray-800 block">
+              {uploadingMultiImages ? multiUploadProgress : 'এক সাথে একাধিক ছবি / পাতা নির্বাচন করুন'}
+            </span>
+            <span className="text-xs text-gray-500 mt-1 block">
+              কম্পিউটার বা মোবাইল থেকে এক সাথে ১, ২, ৫ বা ততোধিক ছবি সিলেক্ট করুন (JPG, PNG, WebP)
+            </span>
+            <input
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleMultiImagesUpload}
+              className="hidden"
+              disabled={uploadingMultiImages}
+            />
+          </label>
+        </div>
+
+        {/* Uploaded Images Gallery & Batch Controls */}
+        {circularImages.length > 0 && (
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-50/70 p-3 rounded-xl border border-emerald-100">
+              <span className="text-xs text-emerald-900 font-semibold flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-emerald-700" />
+                <span>বিজ্ঞপ্তির পাতাসমূহ ({circularImages.length}টি পাতা সংরক্ষিত):</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleInsertAllImagesToContent}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5"
+                  title="সবগুলো ছবি সিরিয়ালে মূল বিবরণী বক্সে যুক্ত করুন"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>মূল বিবরণীতে (Content) বসান</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCircularImages([])}
+                  className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-colors"
+                >
+                  সব মুছুন
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+              {circularImages.map((imgUrl, idx) => (
+                <div
+                  key={idx}
+                  className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs hover:border-emerald-500 transition-all flex flex-col"
+                >
+                  <div className="relative aspect-3/4 max-h-48 bg-gray-100 overflow-hidden flex items-center justify-center">
+                    <img
+                      src={imgUrl}
+                      alt={`Circular Page ${idx + 1}`}
+                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-200"
+                    />
+                    <span className="absolute top-1.5 left-1.5 bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      পাতা {idx + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCircularImage(idx)}
+                      className="absolute top-1.5 right-1.5 p-1 bg-rose-600/90 hover:bg-rose-600 text-white rounded-md transition-colors shadow-xs"
+                      title="এই ছবিটি মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="p-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => handleSetImageAsCover(imgUrl)}
+                      className="text-emerald-700 hover:underline font-semibold"
+                    >
+                      কভার করুন
+                    </button>
+                    <a
+                      href={imgUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-500 hover:text-gray-800"
+                    >
+                      বড় করুন ↗
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* SEO & Search Engine Ranking Optimization Section */}

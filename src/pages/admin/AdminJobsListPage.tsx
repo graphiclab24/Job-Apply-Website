@@ -4,6 +4,7 @@ import { collection, getDocs, deleteDoc, doc, orderBy, query } from 'firebase/fi
 import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import { deleteFile, getFileId } from '../../services/files';
 import { syncJobToFeed } from '../../services/feed';
+import { getCached, setCached, precacheJob } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
@@ -12,17 +13,20 @@ import { useToast } from '../../components/common/Toast';
 import { Plus, Edit, Trash2, ExternalLink, Calendar, Send } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
-  const [jobs, setJobs] = useState<JobCircular[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState<JobCircular[]>(() => {
+    return getCached<JobCircular[]>('admin_jobs') || [];
+  });
+  const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('admin_jobs'));
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { success, error } = useToast();
 
   const fetchJobs = async () => {
-    setLoading(true);
     try {
       const snap = await getDocs(collection(db, 'jobs'));
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobCircular));
       setJobs(list);
+      setCached('admin_jobs', list);
+      list.forEach(precacheJob);
     } catch (err) {
       error('বিজ্ঞপ্তি লোড করতে সমস্যা হয়েছে');
     } finally {

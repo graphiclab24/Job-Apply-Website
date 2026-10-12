@@ -25,6 +25,7 @@ export interface JobCircular {
   circularLink?: string | null;
   featuredImage?: string | null;
   circularFile?: string | null;
+  circularImages?: string[];
   deadline: any;
   applyLink: string;
   applyServiceEnabled: boolean;

@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getFeedLatest, FeedJobSummary } from '../../services/feed';
-import { getCached, setCached } from '../../services/cache';
+import { getCached, setCached, precacheJob } from '../../services/cache';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
@@ -43,6 +43,9 @@ export const HomePage: React.FC = () => {
         if (isMounted) {
           setJobs(feedPosts || []);
           setExamNotices(exams || []);
+          if (Array.isArray(feedPosts)) {
+            feedPosts.forEach(precacheJob);
+          }
         }
       } catch (err) {
         // Silently handled
@@ -221,6 +224,9 @@ export const HomePage: React.FC = () => {
                 <Link
                   key={job.id}
                   to={`/jobs/${job.slug || job.id}`}
+                  state={{ preloadedJob: job }}
+                  onMouseEnter={() => precacheJob(job)}
+                  onTouchStart={() => precacheJob(job)}
                   className="bg-white rounded-xl border border-gray-200 p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { JobCircular } from '../../types';
 import { AlertCircle, Clock } from 'lucide-react';
+import { precacheJob } from '../../services/cache';
 
 interface Props {
   tomorrowDeadlineJobs: JobCircular[];
@@ -32,6 +33,9 @@ export const HomeUrgentDeadlines: React.FC<Props> = ({
             </div>
             <Link
               to={`/jobs/${tomorrowDeadlineJobs[0].slug || tomorrowDeadlineJobs[0].id}`}
+              state={{ preloadedJob: tomorrowDeadlineJobs[0] }}
+              onMouseEnter={() => precacheJob(tomorrowDeadlineJobs[0])}
+              onTouchStart={() => precacheJob(tomorrowDeadlineJobs[0])}
               className="shrink-0 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors"
             >
               দ্রুত আবেদন করুন

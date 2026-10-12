@@ -12,7 +12,7 @@ import {
   DocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { getCached, setCached } from '../../services/cache';
+import { getCached, setCached, precacheJob, getCachedWithSWR } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -97,6 +97,7 @@ export const JobsPage: React.FC = () => {
       setHasMore(list.length === ITEMS_PER_PAGE);
       if (list.length > 0) {
         setCached(cacheKey, list);
+        list.forEach(precacheJob);
       }
       setJobs(list);
     } catch (e) {
@@ -227,6 +228,9 @@ export const JobsPage: React.FC = () => {
               <Link
                 key={job.id}
                 to={`/jobs/${job.slug || job.id}`}
+                state={{ preloadedJob: job }}
+                onMouseEnter={() => precacheJob(job)}
+                onTouchStart={() => precacheJob(job)}
                 className="bg-white rounded-xl border border-gray-200 p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
               >
                 <div>

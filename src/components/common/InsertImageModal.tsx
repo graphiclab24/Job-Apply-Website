@@ -7,8 +7,10 @@ import {
   Image as ImageIcon,
   Check,
   AlertCircle,
-  ExternalLink,
   FolderCheck,
+  Trash2,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import {
   isDriveConnected,
@@ -29,6 +31,12 @@ interface Props {
   onInsertImage: (imgHtml: string) => void;
 }
 
+interface SelectedFileItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+
 export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertImage }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'drive' | 'url'>('upload');
 
@@ -37,16 +45,17 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
   const [driveUser, setDriveUser] = useState(getDriveUser());
   const [connectingDrive, setConnectingDrive] = useState(false);
 
-  // Upload state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>('');
-  const [altText, setAltText] = useState('চাকরির সার্কুলার ইমেজ');
+  // Multiple files state
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFileItem[]>([]);
+  const [altText, setAltText] = useState('নিয়োগ বিজ্ঞপ্তির সার্কুলার ইমেজ');
+  const [layoutMode, setLayoutMode] = useState<'stacked' | 'grid'>('stacked');
   const [uploading, setUploading] = useState(false);
   const [uploadProgressMsg, setUploadProgressMsg] = useState('');
 
   // Drive files state
   const [driveFiles, setDriveFiles] = useState<DriveFileItem[]>([]);
   const [loadingDriveFiles, setLoadingDriveFiles] = useState(false);
+  const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
 
   // URL state
   const [imageUrlInput, setImageUrlInput] = useState('');
@@ -60,8 +69,8 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
       setDriveConnected(isDriveConnected());
       setDriveUser(getDriveUser());
       setErrorMsg('');
-      setSelectedFile(null);
-      setPreviewUrl('');
+      setSelectedFiles([]);
+      setSelectedDriveFileIds([]);
     }
   }, [isOpen]);
 
@@ -75,7 +84,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
     setLoadingDriveFiles(true);
     setErrorMsg('');
     try {
-      const files = await listDriveFiles({ mimeFilter: 'images', pageSize: 24 });
+      const files = await listDriveFiles({ mimeFilter: 'images', pageSize: 30 });
       setDriveFiles(files);
     } catch (err: any) {
       setErrorMsg(err.message || 'ড্রাইভ থেকে ছবি লোড করা যায়নি');
@@ -104,19 +113,36 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setSelectedFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
+    const newItems: SelectedFileItem[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      newItems.push({
+        id: `${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+      });
+    }
+
+    setSelectedFiles((prev) => [...prev, ...newItems]);
     setErrorMsg('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveFile = (id: string) => {
+    setSelectedFiles((prev) => {
+      const item = prev.find((f) => f.id === id);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((f) => f.id !== id);
+    });
   };
 
   const handleUploadAndInsert = async () => {
-    if (!selectedFile) {
-      setErrorMsg('অনুগ্রহ করে একটি ছবি নির্বাচন করুন');
+    if (selectedFiles.length === 0) {
+      setErrorMsg('অনুগ্রহ করে এক বা একাধিক ছবি নির্বাচন করুন');
       return;
     }
 
@@ -124,22 +150,63 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
     setErrorMsg('');
 
     try {
-      let finalImgUrl = '';
+      const uploadedUrls: { url: string; label: string }[] = [];
 
-      if (driveConnected) {
-        setUploadProgressMsg('Google Drive এর "BD Job Circular Images" ফোল্ডারে আপলোড হচ্ছে...');
-        const res = await uploadJobImageToDrive(selectedFile, selectedFile.name);
-        finalImgUrl = res.directImageUrl;
-      } else {
-        // Fallback: Compress to lightweight WebP data URL
-        setUploadProgressMsg('ছবি অপ্টিমাইজ ও প্রস্তুত করা হচ্ছে...');
-        const compressed = await compressImageToDataUrl(selectedFile, 1200, 1600, 120 * 1024, 'image/jpeg');
-        finalImgUrl = compressed.dataUrl;
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const item = selectedFiles[i];
+        const pageNum = i + 1;
+        const total = selectedFiles.length;
+
+        setUploadProgressMsg(
+          total > 1
+            ? `ছবি (${pageNum}/${total}) অপ্টিমাইজ ও আপলোড হচ্ছে...`
+            : 'ছবি অপ্টিমাইজ ও প্রস্তুত করা হচ্ছে...'
+        );
+
+        let finalImgUrl = '';
+        if (driveConnected) {
+          const res = await uploadJobImageToDrive(item.file, item.file.name);
+          finalImgUrl = res.directImageUrl;
+        } else {
+          // Compress to clean lightweight WebP/JPEG data URL (<150KB)
+          const compressed = await compressImageToDataUrl(
+            item.file,
+            1200,
+            1600,
+            150 * 1024,
+            'image/jpeg'
+          );
+          finalImgUrl = compressed.dataUrl;
+        }
+
+        const label = total > 1 ? `পাতা ${pageNum}` : 'সার্কুলার ইমেজ';
+        uploadedUrls.push({ url: finalImgUrl, label });
       }
 
-      const imgTag = `<p style="text-align:center; margin:16px 0;"><img src="${finalImgUrl}" alt="${altText || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin:0 auto; display:block;" /></p>`;
+      // Generate clean HTML
+      let htmlOutput = '';
+      if (layoutMode === 'stacked' || uploadedUrls.length === 1) {
+        htmlOutput = uploadedUrls
+          .map((img, idx) => {
+            const pageCaption =
+              uploadedUrls.length > 1
+                ? `<p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ ${img.label} ]</p>`
+                : '';
+            return `<div style="text-align:center; margin:20px 0;"><img src="${img.url}" alt="${altText} - ${img.label}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${pageCaption}</div>`;
+          })
+          .join('\n');
+      } else {
+        // Grid 2-column layout
+        const gridItems = uploadedUrls
+          .map(
+            (img) =>
+              `<div style="flex:1 1 45%; min-width:280px; text-align:center;"><img src="${img.url}" alt="${altText} - ${img.label}" style="width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); display:block;" /><p style="font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ ${img.label} ]</p></div>`
+          )
+          .join('\n');
+        htmlOutput = `<div style="display:flex; flex-wrap:wrap; gap:16px; margin:20px 0; justify-content:center;">${gridItems}</div>`;
+      }
 
-      onInsertImage(imgTag);
+      onInsertImage(htmlOutput);
       onClose();
     } catch (err: any) {
       setErrorMsg(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
@@ -149,10 +216,28 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
     }
   };
 
-  const handleInsertFromDriveFile = (file: DriveFileItem) => {
-    const directUrl = getDriveDirectImageUrl(file.id);
-    const imgTag = `<p style="text-align:center; margin:16px 0;"><img src="${directUrl}" alt="${file.name || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin:0 auto; display:block;" /></p>`;
-    onInsertImage(imgTag);
+  const handleToggleDriveSelect = (id: string) => {
+    setSelectedDriveFileIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleInsertSelectedDriveFiles = () => {
+    if (selectedDriveFileIds.length === 0) return;
+    const selectedItems = driveFiles.filter((f) => selectedDriveFileIds.includes(f.id));
+
+    let htmlOutput = selectedItems
+      .map((f, idx) => {
+        const directUrl = getDriveDirectImageUrl(f.id);
+        const caption =
+          selectedItems.length > 1
+            ? `<p style="text-align:center; font-size:12px; color:#4b5563; margin-top:6px; font-weight:600;">[ পাতা ${idx + 1} ]</p>`
+            : '';
+        return `<div style="text-align:center; margin:20px 0;"><img src="${directUrl}" alt="${f.name || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" />${caption}</div>`;
+      })
+      .join('\n');
+
+    onInsertImage(htmlOutput);
     onClose();
   };
 
@@ -161,7 +246,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
       setErrorMsg('ছবির লিংক লিখুন');
       return;
     }
-    const imgTag = `<p style="text-align:center; margin:16px 0;"><img src="${imageUrlInput.trim()}" alt="${altText || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin:0 auto; display:block;" /></p>`;
+    const imgTag = `<div style="text-align:center; margin:20px 0;"><img src="${imageUrlInput.trim()}" alt="${altText || 'Circular Image'}" style="max-width:100%; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); margin:0 auto; display:block;" /></div>`;
     onInsertImage(imgTag);
     onClose();
   };
@@ -170,17 +255,19 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
-              <ImageIcon className="w-5 h-5" />
+              <Layers className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-gray-900 text-base">বিজ্ঞপ্তিতে ছবি যুক্ত করুন</h3>
+              <h3 className="font-bold text-gray-900 text-base">
+                বিজ্ঞপ্তিতে একাধিক ছবি আপলোড ও যুক্ত করুন
+              </h3>
               <p className="text-xs text-gray-500">
-                গুগল ড্রাইভ ফোল্ডারে আনলিমিটেড স্টোরেজ অথবা সরাসরি ডিভাইস থেকে আপলোড
+                এক সাথে একাধিক পাতা/ছবি সিলেক্ট করুন, স্বয়ংক্রিয়ভাবে সিরিয়ালে সুন্দরভাবে সাজিয়ে দেবে
               </p>
             </div>
           </div>
@@ -200,13 +287,13 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
             {driveConnected ? (
               <span className="flex items-center gap-1.5 text-emerald-800 font-semibold">
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Google Drive সংযুক্ত আছে: {driveUser?.email || 'অ্যাকাউন্ট'}</span>
+                <span>Google Drive সংযুক্ত: {driveUser?.email || 'অ্যাকাউন্ট'}</span>
                 <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-mono">
                   BD Job Circular Images ফোল্ডার
                 </span>
               </span>
             ) : (
-              <span>Google Drive সংযুক্ত করলে ছবি স্বয়ংক্রিয়ভাবে ড্রাইভে জমা হবে</span>
+              <span>Google Drive সংযুক্ত করলে ছবি আনলিমিটেড স্টোরেজে জমা থাকবে</span>
             )}
           </div>
 
@@ -234,7 +321,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>সরাসরি আপলোড করুন</span>
+            <span>ডিভাইস থেকে একাধিক ছবি আপলোড ({selectedFiles.length})</span>
           </button>
           <button
             type="button"
@@ -268,56 +355,126 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="flex-1">
               <span className="font-semibold block">{errorMsg}</span>
-              {errorMsg.includes('unauthorized-domain') && (
-                <span className="text-[11px] text-rose-700 mt-1 block">
-                  💡 সমাধান: <strong>Firebase Console</strong> &gt; <strong>Authentication</strong> &gt;{' '}
-                  <strong>Settings</strong> &gt; <strong>Authorized Domains</strong>-এ গিয়ে{' '}
-                  <code>bdjobapply.site</code> যুক্ত করুন।
-                </span>
-              )}
             </div>
           </div>
         )}
 
         {/* Modal Body */}
         <div className="p-5 flex-1 overflow-y-auto space-y-4">
-          {/* TAB 1: DIRECT FILE UPLOAD */}
+          {/* TAB 1: MULTIPLE FILE UPLOAD */}
           {activeTab === 'upload' && (
             <div className="space-y-4">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-xl p-6 text-center cursor-pointer transition-colors bg-gray-50/50 hover:bg-emerald-50/30"
+                className="border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-2xl p-6 text-center cursor-pointer transition-colors bg-gray-50/60 hover:bg-emerald-50/40"
               >
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/webp"
-                  onChange={handleFileSelect}
+                  onChange={handleFilesSelect}
                   className="hidden"
                 />
                 <div className="mx-auto w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center text-emerald-600 mb-2 shadow-xs">
                   <Upload className="w-6 h-6" />
                 </div>
-                <p className="text-sm font-semibold text-gray-800">
-                  {selectedFile ? selectedFile.name : 'ছবি বেছে নিতে এখানে ক্লিক করুন'}
+                <p className="text-sm font-bold text-gray-800">
+                  এক সাথে এক বা একাধিক ছবি নির্বাচন করতে ক্লিক করুন
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  JPG, PNG অথবা WebP ফরম্যাট (সর্বোচ্চ সাইজ ১০ MB)
+                  JPG, PNG অথবা WebP ফরম্যাট। একাধিক পাতা থাকলে একসাথে সব সিলেক্ট করুন।
                 </p>
                 {driveConnected && (
                   <p className="text-[11px] text-emerald-700 font-semibold mt-2 flex items-center justify-center gap-1">
                     <FolderCheck className="w-3.5 h-3.5" />
-                    <span>Google Drive এর "BD Job Circular Images" ফোল্ডারে স্বয়ংক্রিয়ভাবে সংরক্ষিত হবে</span>
+                    <span>Google Drive এর &quot;BD Job Circular Images&quot; ফোল্ডারে সংরক্ষিত হবে</span>
                   </p>
                 )}
               </div>
 
-              {previewUrl && (
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-                  <span className="text-xs font-bold text-gray-700 block">ছবির প্রিভিউ:</span>
-                  <div className="rounded-lg overflow-hidden border border-gray-200 max-h-48 bg-white flex items-center justify-center">
-                    <img src={previewUrl} alt="Preview" className="max-h-48 object-contain" />
+              {/* Selected Files Preview Strip */}
+              {selectedFiles.length > 0 && (
+                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      <span>নির্বাচিত ছবি ({selectedFiles.length}টি পাতা):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFiles([])}
+                      className="text-rose-600 hover:underline text-[11px] font-semibold"
+                    >
+                      সব মুছুন
+                    </button>
                   </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-56 overflow-y-auto p-1">
+                    {selectedFiles.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="relative group bg-white border border-gray-200 rounded-xl overflow-hidden p-1.5 shadow-xs flex flex-col"
+                      >
+                        <div className="relative h-24 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                          <img
+                            src={item.previewUrl}
+                            alt={`Preview ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">
+                            পাতা {idx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFile(item.id);
+                            }}
+                            className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-md opacity-80 hover:opacity-100 transition-opacity"
+                            title="মুছে ফেলুন"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-gray-600 truncate mt-1 px-1 font-medium">
+                          {item.file.name}
+                        </span>
+                        <span className="text-[9px] text-gray-400 px-1">
+                          {(item.file.size / 1024).toFixed(0)} KB
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Layout Option */}
+                  {selectedFiles.length > 1 && (
+                    <div className="pt-2 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="text-gray-700 font-semibold">বিজ্ঞপ্তিতে পাতার বিন্যাস:</span>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-700">
+                          <input
+                            type="radio"
+                            name="layout"
+                            checked={layoutMode === 'stacked'}
+                            onChange={() => setLayoutMode('stacked')}
+                            className="text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>একটির নিচে আরেকটি (ফুল সাইজ)</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-700">
+                          <input
+                            type="radio"
+                            name="layout"
+                            checked={layoutMode === 'grid'}
+                            onChange={() => setLayoutMode('grid')}
+                            className="text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>পাশাপাশি ২ কলাম (গ্রিড)</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -329,7 +486,7 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
                   type="text"
                   value={altText}
                   onChange={(e) => setAltText(e.target.value)}
-                  placeholder="যেমন: নিয়োগ বিজ্ঞপ্তির পাতা ১"
+                  placeholder="যেমন: নিয়োগ বিজ্ঞপ্তির পাতা"
                   className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 focus:outline-none focus:border-emerald-600"
                 />
               </div>
@@ -356,29 +513,50 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
                 </div>
               ) : driveFiles.length === 0 ? (
                 <div className="text-center py-8 text-xs text-gray-500">
-                  Google Drive-এ কোনো ছবি পাওয়া যায়নি। &quot;সরাসরি আপলোড করুন&quot; ট্যাব থেকে নতুন ছবি আপলোড করুন।
+                  Google Drive-এ কোনো ছবি পাওয়া যায়নি। &quot;ডিভাইস থেকে একাধিক ছবি আপলোড&quot; ট্যাব থেকে নতুন ছবি আপলোড করুন।
                 </div>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1">
-                  {driveFiles.map((f) => (
-                    <div
-                      key={f.id}
-                      onClick={() => handleInsertFromDriveFile(f)}
-                      className="group border border-gray-200 hover:border-emerald-600 rounded-lg p-2 text-center cursor-pointer transition-all hover:shadow-xs bg-white flex flex-col items-center justify-between"
-                      title="ক্লিক করে এই ছবিটি বিজ্ঞপ্তিতে যুক্ত করুন"
-                    >
-                      <div className="w-full h-16 bg-gray-50 rounded flex items-center justify-center overflow-hidden mb-1">
-                        {f.thumbnailLink ? (
-                          <img src={f.thumbnailLink} alt={f.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <ImageIcon className="w-6 h-6 text-gray-400" />
-                        )}
-                      </div>
-                      <span className="text-[10px] text-gray-700 truncate w-full group-hover:text-emerald-700 font-medium">
-                        {f.name}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-gray-600">
+                    <span>ছবিতে ক্লিক করে এক বা একাধিক সিলেক্ট করুন:</span>
+                    {selectedDriveFileIds.length > 0 && (
+                      <span className="text-emerald-700 font-bold">
+                        {selectedDriveFileIds.length}টি ছবি নির্বাচিত
                       </span>
-                    </div>
-                  ))}
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1">
+                    {driveFiles.map((f) => {
+                      const isSelected = selectedDriveFileIds.includes(f.id);
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => handleToggleDriveSelect(f.id)}
+                          className={`relative group border rounded-xl p-2 text-center cursor-pointer transition-all hover:shadow-xs bg-white flex flex-col items-center justify-between ${
+                            isSelected
+                              ? 'border-emerald-600 ring-2 ring-emerald-500/30 bg-emerald-50/20'
+                              : 'border-gray-200 hover:border-emerald-400'
+                          }`}
+                        >
+                          <div className="w-full h-16 bg-gray-50 rounded-lg flex items-center justify-center overflow-hidden mb-1 relative">
+                            {f.thumbnailLink ? (
+                              <img src={f.thumbnailLink} alt={f.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <ImageIcon className="w-6 h-6 text-gray-400" />
+                            )}
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-emerald-600 text-white rounded-full p-0.5 shadow-xs">
+                                <Check className="w-3 h-3" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-gray-700 truncate w-full font-medium">
+                            {f.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -430,11 +608,26 @@ export const InsertImageModal: React.FC<Props> = ({ isOpen, onClose, onInsertIma
               type="button"
               onClick={handleUploadAndInsert}
               loading={uploading}
-              disabled={!selectedFile}
+              disabled={selectedFiles.length === 0}
               icon={<Upload className="w-3.5 h-3.5" />}
               size="sm"
             >
-              {uploadProgressMsg || 'ছবি আপলোড ও ইনসার্ট করুন'}
+              {uploadProgressMsg ||
+                (selectedFiles.length > 1
+                  ? `সবগুলো ছবি (${selectedFiles.length}টি) বিজ্ঞপ্তিতে যুক্ত করুন`
+                  : 'ছবি আপলোড ও ইনসার্ট করুন')}
+            </Button>
+          )}
+
+          {activeTab === 'drive' && (
+            <Button
+              type="button"
+              onClick={handleInsertSelectedDriveFiles}
+              disabled={selectedDriveFileIds.length === 0}
+              icon={<Check className="w-3.5 h-3.5" />}
+              size="sm"
+            >
+              নির্বাচিত ছবি ({selectedDriveFileIds.length}টি) যুক্ত করুন
             </Button>
           )}
 
