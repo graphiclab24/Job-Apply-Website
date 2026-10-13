@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { collection, query, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { getFeedLatest, FeedJobSummary } from '../../services/feed';
 import { getCached, setCached, precacheJob, prefetchJobDetail } from '../../services/cache';
 import { DEFAULT_FEED_JOBS } from '../../data/defaultJobs';
@@ -51,16 +49,31 @@ export const HomePage: React.FC = () => {
         if (isMounted) setLoading(false);
       });
 
-    // 2. Fetch Exams non-blockingly in the background (never freezes job rendering)
+    // 2. Fetch Exams non-blockingly from Edge Server API & Cloudflare R2 (0 Firestore reads)
     const cachedExams = getCached<ExamNotice[]>('exams_home');
     if (!cachedExams || cachedExams.length === 0) {
-      getDocs(query(collection(db, 'exams'), limit(4)))
-        .then((examSnap) => {
-          const exams = examSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ExamNotice));
-          setCached('exams_home', exams);
-          if (isMounted) setExamNotices(exams);
+      fetch('/api/exams')
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((data) => {
+          const list = Array.isArray(data?.exams) ? data.exams.slice(0, 4) : [];
+          if (list.length > 0) {
+            setCached('exams_home', list);
+            if (isMounted) setExamNotices(list);
+          }
         })
-        .catch(() => {});
+        .catch(() => {
+          // Cloudflare R2 fallback
+          fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/exams.json')
+            .then((res) => (res.ok ? res.json() : []))
+            .then((r2List) => {
+              if (Array.isArray(r2List) && r2List.length > 0) {
+                const list = r2List.slice(0, 4);
+                setCached('exams_home', list);
+                if (isMounted) setExamNotices(list);
+              }
+            })
+            .catch(() => {});
+        });
     }
 
     return () => {

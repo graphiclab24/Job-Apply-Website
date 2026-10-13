@@ -52,7 +52,45 @@ export const AdminDashboardPage: React.FC = () => {
   const fetchAdminStats = async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
-      // High-efficiency count fetches
+      // 1. High-speed 0-cost fetch from Server API (Disk & Cloudflare R2 backed)
+      try {
+        const [appRes, jobRes] = await Promise.all([
+          fetch('/api/applications'),
+          fetch('/api/jobs?limit=1000'),
+        ]);
+        if (appRes.ok) {
+          const appData = await appRes.json();
+          const apps = Array.isArray(appData?.applications) ? appData.applications : [];
+          let jobsCount = 0;
+          if (jobRes.ok) {
+            const jData = await jobRes.json();
+            jobsCount = typeof jData?.total === 'number' ? jData.total : (Array.isArray(jData?.jobs) ? jData.jobs.length : 0);
+          }
+
+          const computedCounts = {
+            waiting: apps.filter((a: any) => a.status === 'waiting').length,
+            applyNow: apps.filter((a: any) => a.status === 'apply_now').length,
+            checking: apps.filter((a: any) => a.status === 'checking' || a.status === 'correction').length,
+            paymentNow: apps.filter((a: any) => a.status === 'payment_now').length,
+            complete: apps.filter((a: any) => a.status === 'applied').length,
+            rejected: apps.filter((a: any) => a.status === 'rejected').length,
+            jobsTotal: jobsCount,
+          };
+          setCounts(computedCounts);
+          setCached('admin_dashboard_counts', computedCounts);
+
+          const urgent = apps
+            .filter((a: any) => ['waiting', 'apply_now', 'payment_now'].includes(a.status))
+            .slice(0, 5);
+          setUrgentApps(urgent);
+          setCached('admin_dashboard_urgent', urgent);
+          setLoading(false);
+          setIsRefreshing(false);
+          return;
+        }
+      } catch {}
+
+      // 2. Fallback to Firestore getCountFromServer
       const [
         waitingCountSnap,
         applyNowCountSnap,

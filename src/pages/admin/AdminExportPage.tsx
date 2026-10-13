@@ -20,8 +20,21 @@ export const AdminExportPage: React.FC = () => {
     setStatusLog(['ডাটাবেজ থেকে সকল আবেদন সংগ্রহ করা হচ্ছে...']);
 
     try {
-      const snap = await getDocs(collection(db, 'applications'));
-      const apps = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobApplication));
+      let apps: JobApplication[] = [];
+      try {
+        const res = await fetch('/api/applications');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data?.applications) && data.applications.length > 0) {
+            apps = data.applications;
+          }
+        }
+      } catch {}
+
+      if (apps.length === 0) {
+        const snap = await getDocs(collection(db, 'applications'));
+        apps = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobApplication));
+      }
 
       setStatusLog((prev) => [...prev, `মোট ${apps.length}টি আবেদন পাওয়া গেছে।`]);
       setStatusLog((prev) => [...prev, 'প্রার্থীদের ছবি ও স্বাক্ষর সংগ্রহ করা হচ্ছে (getFile)...']);

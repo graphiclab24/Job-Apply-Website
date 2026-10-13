@@ -2,16 +2,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Search, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
-import {
-  collection,
-  query,
-  where,
-  limit,
-  startAfter,
-  getDocs,
-  DocumentSnapshot,
-} from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { getCached, setCached, precacheJob, getCachedWithSWR, prefetchJobDetail } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
@@ -37,8 +27,6 @@ export const JobsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
-  // Store page cursor snapshots for limit(20) + startAfter pagination
-  const pageCursorMap = useRef<Map<number, DocumentSnapshot>>(new Map());
 
   const fetchPage = async (page: number) => {
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
@@ -99,69 +87,8 @@ export const JobsPage: React.FC = () => {
           return;
         }
       }
-    } catch {}
-
-    // Step 2: Client-side Firestore SDK Fallback (If offline or API unavailable)
-    try {
-      let q;
-      if (page === 1) {
-        q = query(
-          collection(db, 'jobs'),
-          where('status', '==', 'published'),
-          limit(ITEMS_PER_PAGE)
-        );
-      } else {
-        const prevCursor = pageCursorMap.current.get(page - 1);
-        if (prevCursor) {
-          q = query(
-            collection(db, 'jobs'),
-            where('status', '==', 'published'),
-            startAfter(prevCursor),
-            limit(ITEMS_PER_PAGE)
-          );
-        } else {
-          q = query(
-            collection(db, 'jobs'),
-            where('status', '==', 'published'),
-            limit(ITEMS_PER_PAGE)
-          );
-        }
-      }
-
-      let snap = await getDocs(q);
-
-      // Fallback: if query with status=='published' returns 0, try fetching jobs collection
-      if (snap.empty && page === 1) {
-        try {
-          const fallbackQ = query(collection(db, 'jobs'), limit(ITEMS_PER_PAGE));
-          const fallbackSnap = await getDocs(fallbackQ);
-          if (!fallbackSnap.empty) {
-            snap = fallbackSnap;
-          }
-        } catch (fbErr) {
-          console.warn('Fallback query notice:', fbErr);
-        }
-      }
-
-      const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as JobCircular))
-        .filter((j) => j.status !== 'draft');
-
-      if (snap.docs.length > 0) {
-        pageCursorMap.current.set(page, snap.docs[snap.docs.length - 1]);
-      }
-
-      setHasMore(list.length === ITEMS_PER_PAGE);
-      if (list.length > 0) {
-        setCached(cacheKey, list);
-        if (page === 1 && categoryFilter === 'all' && !searchTerm) {
-          setCached('jobs_page_1', list);
-        }
-        list.forEach(precacheJob);
-      }
-      setJobs(list);
-    } catch (e) {
-      console.error('Failed to load jobs page:', e);
+    } catch {
+      // Handled silently
     } finally {
       setLoading(false);
     }

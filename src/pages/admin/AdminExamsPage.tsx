@@ -24,6 +24,14 @@ export const AdminExamsPage: React.FC = () => {
 
   const fetchNotices = async () => {
     try {
+      const res = await fetch('/api/exams');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.exams)) {
+          setNotices(data.exams);
+          return;
+        }
+      }
       const snap = await getDocs(collection(db, 'exams'));
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExamNotice));
       setNotices(list);
@@ -43,15 +51,24 @@ export const AdminExamsPage: React.FC = () => {
     if (!title) return;
     setSaving(true);
     try {
-      const noticeId = doc(collection(db, 'exams')).id;
-      await setDoc(doc(db, 'exams', noticeId), {
+      const noticeData = {
         title,
         date: date || new Date().toISOString().slice(0, 10),
         category,
         content,
-        createdAt: serverTimestamp(),
+      };
+
+      const res = await fetch('/api/admin/exams/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(noticeData),
       });
-      success('পরীক্ষা নোটিশ প্রকাশ হয়েছে');
+
+      if (!res.ok) {
+        throw new Error('সার্ভারে সেভ করতে সমস্যা হয়েছে');
+      }
+
+      success('পরীক্ষা নোটিশ প্রকাশ ও R2-তে সংরক্ষিত হয়েছে');
       invalidateCache('exams_');
       setTitle('');
       setDate('');
@@ -69,7 +86,7 @@ export const AdminExamsPage: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm('আপনি কি নিশ্চিত যে নোটিশটি মুছতে চান?')) return;
     try {
-      await deleteDoc(doc(db, 'exams', id));
+      await fetch(`/api/admin/exams/${id}`, { method: 'DELETE' });
       invalidateCache('exams_');
       setNotices(notices.filter((n) => n.id !== id));
       success('নোটিশ মুছে ফেলা হয়েছে');

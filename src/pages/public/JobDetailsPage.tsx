@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { getFile, getFileId } from '../../services/files';
 import { getCached, setCached, getCachedWithSWR, precacheJob, findJobInAnyCache } from '../../services/cache';
 import { JobCircular } from '../../types';
@@ -100,39 +98,37 @@ export const JobDetailsPage: React.FC = () => {
             }
           }
         } catch {
-          // Fallback to client-side Firestore SDK
+          // Fallback to Cloudflare R2 CDN below
         }
 
-        // Step B: Parallel Client SDK Queries (Fallback)
-        const docRef = doc(db, 'jobs', slug);
-        const qSlug = query(collection(db, 'jobs'), where('slug', '==', slug), limit(1));
-
-        const [docSnap, querySnap] = await Promise.all([
-          getDoc(docRef).catch(() => null),
-          getDocs(qSlug).catch(() => null),
-        ]);
-
-        if (isCancelled) return;
-
-        let resolvedJob: JobCircular | null = null;
-        if (querySnap && !querySnap.empty) {
-          const docItem = querySnap.docs[0];
-          resolvedJob = { id: docItem.id, ...docItem.data() } as JobCircular;
-        } else if (docSnap && docSnap.exists()) {
-          resolvedJob = { id: docSnap.id, ...docSnap.data() } as JobCircular;
-        }
-
-        if (!resolvedJob && slug) {
-          resolvedJob = DEFAULT_JOBS.find((j) => j.slug === slug || j.id === slug) || null;
-        }
-
-        if (resolvedJob) {
-          setCached(cacheKey, resolvedJob);
-          precacheJob(resolvedJob);
-          setJob(resolvedJob);
-          if (resolvedJob.featuredImage) {
-            setCoverDataUrl(resolvedJob.featuredImage);
+        // Step B: Cloudflare R2 CDN Fallback (Zero Firestore Reads, Global Edge CDN)
+        try {
+          const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+          if (r2Res.ok) {
+            const r2Jobs = await r2Res.json();
+            if (Array.isArray(r2Jobs)) {
+              const decodedSlug = decodeURIComponent(slug);
+              const resolvedJob = r2Jobs.find(
+                (j: any) =>
+                  j.slug === slug ||
+                  j.id === slug ||
+                  (j.slug && decodeURIComponent(j.slug) === decodedSlug)
+              );
+              if (resolvedJob) {
+                if (isCancelled) return;
+                setCached(cacheKey, resolvedJob);
+                precacheJob(resolvedJob);
+                setJob(resolvedJob);
+                if (resolvedJob.featuredImage) {
+                  setCoverDataUrl(resolvedJob.featuredImage);
+                }
+                setLoading(false);
+                return;
+              }
+            }
           }
+        } catch {
+          // Handled silently
         }
       } catch (err) {
         // Silently handled

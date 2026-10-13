@@ -36,6 +36,7 @@ const SHORT_LINKS_FILE = path.join(DATA_DIR, 'short_links.json');
 const STORAGE_CONFIG_FILE = path.join(DATA_DIR, 'storage_config.json');
 const APPLICATIONS_FILE = path.join(DATA_DIR, 'applications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
 
 interface StorageConfig {
   provider: 'cloudflare-r2' | 'local';
@@ -175,6 +176,44 @@ async function syncApplicationsToR2(apps: any[]) {
     );
   } catch (e) {
     console.warn('R2 applications sync notice:', e);
+  }
+}
+
+async function syncExamsToR2(exams: any[]) {
+  const conf = getStorageConfig();
+  if (conf.provider !== 'cloudflare-r2' || !conf.bucketName) return;
+  const s3 = getR2Client(conf);
+  if (!s3) return;
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: conf.bucketName,
+        Key: 'exams.json',
+        Body: JSON.stringify(exams, null, 2),
+        ContentType: 'application/json',
+      })
+    );
+  } catch (e) {
+    console.warn('R2 exams sync notice:', e);
+  }
+}
+
+function getStoredExams(): any[] {
+  try {
+    if (fs.existsSync(EXAMS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(EXAMS_FILE, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
+}
+
+function saveStoredExams(exams: any[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(EXAMS_FILE, JSON.stringify(exams, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to save exams:', err);
   }
 }
 
@@ -1327,6 +1366,239 @@ RESPOND IN PURE JSON (no markdown fences, no \`\`\`json):
   } catch (err: any) {
     console.error('Job extraction error:', err);
     res.status(500).json({ error: err.message || 'এক্সট্রাকশন সম্পন্ন করা যায়নি' });
+  }
+});
+
+/**
+ * =========================================================================
+ * 0-Cost High-Performance Exams Endpoints (Disk & Cloudflare R2 Backed)
+ * =========================================================================
+ */
+app.get('/api/exams', async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300');
+  try {
+    let exams = getStoredExams();
+    if (exams.length === 0) {
+      const conf = getStorageConfig();
+      if (conf.publicUrl) {
+        try {
+          const r2Res = await fetch(`${conf.publicUrl.replace(/\/$/, '')}/exams.json`);
+          if (r2Res.ok) {
+            const r2Exams = await r2Res.json();
+            if (Array.isArray(r2Exams) && r2Exams.length > 0) {
+              exams = r2Exams;
+              saveStoredExams(exams);
+            }
+          }
+        } catch {}
+      }
+    }
+    return res.json({ exams });
+  } catch (err: any) {
+    return res.status(500).json({ exams: [], error: err?.message });
+  }
+});
+
+app.post('/api/admin/exams/save', async (req: Request, res: Response) => {
+  try {
+    const notice = req.body;
+    if (!notice || !notice.title) {
+      return res.status(400).json({ success: false, error: 'শিরোনাম প্রয়োজন' });
+    }
+    const id = notice.id || `exam-${Date.now()}`;
+    const cleanNotice = {
+      ...notice,
+      id,
+      createdAt: notice.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const stored = getStoredExams();
+    const idx = stored.findIndex((e) => e.id === id);
+    if (idx >= 0) {
+      stored[idx] = cleanNotice;
+    } else {
+      stored.unshift(cleanNotice);
+    }
+    saveStoredExams(stored);
+    syncExamsToR2(stored).catch(() => {});
+
+    // Non-blocking background Firestore sync
+    try {
+      setDoc(doc(db, 'exams', id), cleanNotice, { merge: true }).catch(() => {});
+    } catch {}
+
+    return res.json({ success: true, notice: cleanNotice });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+app.delete('/api/admin/exams/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const stored = getStoredExams().filter((e) => e.id !== id);
+    saveStoredExams(stored);
+    syncExamsToR2(stored).catch(() => {});
+
+    // Non-blocking background Firestore delete
+    try {
+      deleteDoc(doc(db, 'exams', id)).catch(() => {});
+    } catch {}
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+/**
+ * =========================================================================
+ * 0-Cost Scale Applications Endpoints (Google Sheets & Cloudflare R2 Backed)
+ * =========================================================================
+ */
+app.get('/api/applications', (req: Request, res: Response) => {
+  try {
+    const { status, search } = req.query as { status?: string; search?: string };
+    let apps = getStoredApplications();
+
+    if (status && status !== 'all') {
+      apps = apps.filter((a) => a.status === status);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      apps = apps.filter(
+        (a) =>
+          a.id?.toLowerCase().includes(q) ||
+          a.fullName?.toLowerCase().includes(q) ||
+          a.mobile?.includes(q) ||
+          a.smsNumber?.includes(q) ||
+          a.jobTitle?.toLowerCase().includes(q) ||
+          a.payment?.trxId?.toLowerCase().includes(q)
+      );
+    }
+
+    return res.json({ applications: apps });
+  } catch (err: any) {
+    return res.status(500).json({ applications: [], error: err?.message });
+  }
+});
+
+app.get('/api/applications/my', (req: Request, res: Response) => {
+  try {
+    const { uid } = req.query as { uid?: string };
+    if (!uid) return res.json({ applications: [] });
+
+    const apps = getStoredApplications().filter((a) => a.uid === uid);
+    return res.json({ applications: apps });
+  } catch (err: any) {
+    return res.status(500).json({ applications: [], error: err?.message });
+  }
+});
+
+app.post('/api/applications/submit', async (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload || !payload.jobId || !payload.fullName) {
+      return res.status(400).json({ success: false, error: 'অসম্পূর্ণ আবেদন তথ্য' });
+    }
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(2, 10).replace(/-/g, '');
+    const randNum = Math.floor(1000 + Math.random() * 9000);
+    const appId = payload.id || `APL-${dateStr}-${randNum}`;
+
+    const newApp = {
+      ...payload,
+      id: appId,
+      status: payload.status || 'waiting',
+      createdAt: payload.createdAt || now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    const stored = getStoredApplications();
+    const existingIdx = stored.findIndex((a) => a.id === appId);
+    if (existingIdx >= 0) {
+      stored[existingIdx] = newApp;
+    } else {
+      stored.unshift(newApp);
+    }
+
+    saveStoredApplications(stored);
+    syncApplicationsToR2(stored).catch(() => {});
+
+    // Forward to Google Sheets Webhook (Instant, 0 Quota, 1M+ Scale)
+    forwardToGoogleSheetsWebhook(newApp).catch(() => {});
+
+    // Non-blocking Firestore background backup (fails gracefully if quota hit)
+    try {
+      setDoc(doc(db, 'applications', appId), newApp, { merge: true }).catch(() => {});
+    } catch {}
+
+    return res.json({ success: true, id: appId, application: newApp });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+app.patch('/api/applications/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const stored = getStoredApplications();
+    const idx = stored.findIndex((a) => a.id === id);
+
+    if (idx < 0) {
+      return res.status(404).json({ success: false, error: 'আবেদন খুঁজে পাওয়া যায়নি' });
+    }
+
+    stored[idx] = {
+      ...stored[idx],
+      ...updateData,
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveStoredApplications(stored);
+    syncApplicationsToR2(stored).catch(() => {});
+
+    // Forward status update to Google Sheets Webhook
+    forwardToGoogleSheetsWebhook({
+      action: 'update_status',
+      id,
+      ...updateData,
+    }).catch(() => {});
+
+    // Non-blocking Firestore update
+    try {
+      setDoc(doc(db, 'applications', id), updateData, { merge: true }).catch(() => {});
+    } catch {}
+
+    return res.json({ success: true, application: stored[idx] });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+app.get('/api/applications/config', (_req: Request, res: Response) => {
+  const conf = getStorageConfig();
+  return res.json({
+    configured: Boolean(conf.appsScriptUrl),
+    webhookUrl: conf.appsScriptUrl || '',
+  });
+});
+
+app.post('/api/applications/config', (req: Request, res: Response) => {
+  try {
+    const { webhookUrl } = req.body || {};
+    let conf = getStorageConfig();
+    conf.appsScriptUrl = String(webhookUrl || '').trim();
+
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(STORAGE_CONFIG_FILE, JSON.stringify(conf, null, 2), 'utf8');
+
+    return res.json({ success: true, configured: Boolean(conf.appsScriptUrl) });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
   }
 });
 

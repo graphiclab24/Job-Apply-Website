@@ -10,6 +10,7 @@ import { Button } from '../../components/common/Button';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
 import { UserApplicationCard } from '../../components/user/UserApplicationCard';
+import { fetchUserApplications, updateApplicationStatus } from '../../services/applicationsService';
 
 export const UserApplicationsPage: React.FC = () => {
   const { status } = useParams<{ status: string }>();
@@ -38,6 +39,18 @@ export const UserApplicationsPage: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
+      // 1. Fetch from Server / Cloudflare R2 backup (0 quota consumed)
+      const serverApps = await fetchUserApplications(user.uid);
+      if (serverApps.length > 0) {
+        const list = serverApps
+          .filter((a) => currentStatuses.includes(a.status))
+          .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setApps(list);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback to Firestore
       const q = query(collection(db, 'applications'), where('uid', '==', user.uid));
       const snap = await getDocs(q);
       const list = snap.docs
@@ -64,10 +77,13 @@ export const UserApplicationsPage: React.FC = () => {
     if (!window.confirm('আপনি কি নিশ্চিত যে সফট কপির সকল তথ্য ঠিক আছে?')) return;
     setUpdatingId(app.id);
     try {
-      await updateDoc(doc(db, 'applications', app.id), {
-        status: 'payment_now',
-        updatedAt: serverTimestamp(),
-      });
+      await updateApplicationStatus(app.id, { status: 'payment_now' });
+      try {
+        await updateDoc(doc(db, 'applications', app.id), {
+          status: 'payment_now',
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
       success('আবেদনটি অনুমোদিত হয়েছে এবং Payment Now ধাপে পাঠানো হয়েছে।');
       fetchApps();
     } catch (err) {

@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../../services/firebase';
 
 export const SitemapView: React.FC = () => {
   const [xmlContent, setXmlContent] = useState<string>('');
@@ -38,16 +36,30 @@ export const SitemapView: React.FC = () => {
           { loc: `${base}/register`, priority: '0.5', changefreq: 'monthly', lastmod: today },
         ];
 
-        const q = query(collection(db, 'jobs'), where('status', '==', 'published'));
-        const snap = await getDocs(q);
-        snap.forEach((docItem) => {
-          const data = docItem.data();
-          const slug = data.slug || docItem.id;
+        let jobsList: any[] = [];
+        try {
+          const apiRes = await fetch('/api/jobs');
+          if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            if (Array.isArray(apiData?.jobs)) jobsList = apiData.jobs;
+          }
+        } catch {
+          try {
+            const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+            if (r2Res.ok) {
+              const r2Data = await r2Res.json();
+              if (Array.isArray(r2Data)) jobsList = r2Data;
+            }
+          } catch {}
+        }
+
+        jobsList.forEach((data) => {
+          const slug = data.slug || data.id;
           let lastmod = today;
-          if (data.updatedAt?.toDate) {
-            lastmod = data.updatedAt.toDate().toISOString().split('T')[0];
-          } else if (data.createdAt?.toDate) {
-            lastmod = data.createdAt.toDate().toISOString().split('T')[0];
+          if (data.updatedAt) {
+            lastmod = new Date(data.updatedAt).toISOString().split('T')[0];
+          } else if (data.createdAt) {
+            lastmod = new Date(data.createdAt).toISOString().split('T')[0];
           }
           urls.push({
             loc: `${base}/jobs/${encodeURIComponent(slug)}`,

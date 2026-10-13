@@ -20,6 +20,7 @@ import {
   KeyRound,
   Database,
   Globe,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   isDriveConnected,
@@ -37,9 +38,13 @@ import { GoogleSignInButton } from '../../components/common/GoogleSignInButton';
 import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
 import { useToast } from '../../components/common/Toast';
+import { getAppsScriptConfig, saveAppsScriptConfig } from '../../services/applicationsService';
 
 export const AdminGoogleDrivePage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'r2' | 'drive'>('r2');
+  const [activeTab, setActiveTab] = useState<'r2' | 'drive' | 'sheets'>('r2');
+  const [appsScriptUrl, setAppsScriptUrl] = useState('');
+  const [appsScriptConfigured, setAppsScriptConfigured] = useState(false);
+  const [savingAppsScript, setSavingAppsScript] = useState(false);
 
   // Cloudflare R2 State
   const [r2Config, setR2Config] = useState({
@@ -97,10 +102,35 @@ export const AdminGoogleDrivePage: React.FC = () => {
           }));
         }
       }
+      const appsCfg = await getAppsScriptConfig();
+      setAppsScriptConfigured(appsCfg.configured);
+      if (appsCfg.webhookUrl) setAppsScriptUrl(appsCfg.webhookUrl);
     } catch (e) {
       console.warn('Failed to fetch storage config:', e);
     } finally {
       setLoadingR2Status(false);
+    }
+  };
+
+  const handleSaveAppsScript = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!appsScriptUrl.trim()) {
+      toastError('Apps Script Webhook URL প্রদান করুন');
+      return;
+    }
+    setSavingAppsScript(true);
+    try {
+      const ok = await saveAppsScriptConfig(appsScriptUrl.trim());
+      if (ok) {
+        setAppsScriptConfigured(true);
+        success('Google Sheets Webhook সফলভাবে সংরক্ষিত হয়েছে!');
+      } else {
+        toastError('সংরক্ষণ ব্যর্থ হয়েছে');
+      }
+    } catch {
+      toastError('সংরক্ষণ ব্যর্থ হয়েছে');
+    } finally {
+      setSavingAppsScript(false);
     }
   };
 
@@ -311,6 +341,18 @@ export const AdminGoogleDrivePage: React.FC = () => {
           >
             <HardDrive className="w-4 h-4 text-blue-500" />
             Google Drive (১৫ GB)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('sheets')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'sheets'
+                ? 'bg-white text-emerald-700 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            Google Sheets (১M+ স্কেল / ০ খরচ)
           </button>
         </div>
       </div>
@@ -814,6 +856,119 @@ export const AdminGoogleDrivePage: React.FC = () => {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 3: GOOGLE SHEETS WEBHOOK (0-Cost 1M+ Scale) */}
+      {activeTab === 'sheets' && (
+        <div className="space-y-6">
+          {/* Status Box */}
+          <div
+            className={`p-5 rounded-2xl border transition-all ${
+              appsScriptConfigured
+                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                : 'bg-amber-50/70 border-amber-200 text-amber-900'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`p-2 rounded-xl mt-0.5 ${
+                    appsScriptConfigured ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {appsScriptConfigured ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">
+                    {appsScriptConfigured
+                      ? 'Google Sheets Webhook সক্রিয় ও সংযুক্ত!'
+                      : 'Google Sheets Webhook সংযোগ অপেক্ষমাণ (ফ্রি ১M+ আবেদন স্কেল)'}
+                  </h3>
+                  <p className="text-xs mt-1 opacity-90">
+                    {appsScriptConfigured
+                      ? 'প্রার্থীদের সকল নতুন আবেদন ও পেমেন্ট ট্রানজ্যাকশন স্বয়ংক্রিয়ভাবে আপনার গুগল শিটে ব্যাকআপ হচ্ছে (০ ফায়ারবেস কোটা ব্যবহার)।'
+                      : 'Apps Script Webhook URL যুক্ত করলে প্রার্থীর কোনো আবেদন মিস হবে না এবং আনলিমিটেড ট্রানজ্যাকশন গুগল শিটে আজীবন সম্পূর্ণ ফ্রিতে রেকর্ড থাকবে।'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/google_apps_script_template.js"
+                  download="bdjob_google_apps_script.js"
+                  className="px-3.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold hover:bg-gray-50 flex items-center gap-1.5 shadow-sm"
+                >
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  স্ক্রিপ্ট টেমপ্লেট কোড
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Webhook Configuration Form */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-2">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+              Google Apps Script Webhook URL কনফিগারেশন
+            </h3>
+            <p className="text-xs text-gray-500 mb-6">
+              Google Sheet-এর <code>Extensions &gt; Apps Script</code> থেকে প্রস্তুত করা Web App URL নিচে পেস্ট করুন।
+            </p>
+
+            <form onSubmit={handleSaveAppsScript} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Apps Script Web App URL <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                  value={appsScriptUrl}
+                  onChange={(e) => setAppsScriptUrl(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  required
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Deploy &gt; New deployment &gt; Type: Web app &gt; Execute as: Me &gt; Who has access: Anyone
+                </p>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  type="submit"
+                  disabled={savingAppsScript}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-sm"
+                >
+                  {savingAppsScript ? 'সংরক্ষণ হচ্ছে...' : 'Webhook সংরক্ষণ করুন'}
+                </Button>
+              </div>
+            </form>
+          </div>
+
+          {/* Setup Guide */}
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+            <h4 className="font-bold text-sm text-gray-900 flex items-center gap-2 mb-3">
+              <Info className="w-4 h-4 text-blue-600" />
+              কীভাবে ৩ মিনিটে ফ্রি গুগল শিট ওয়েবুক চালু করবেন:
+            </h4>
+            <ol className="list-decimal list-inside space-y-2 text-xs text-gray-600 leading-relaxed">
+              <li>
+                <a href="https://sheets.new" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-semibold">sheets.new</a> ওপেন করে একটি নতুন শিট তৈরি করুন।
+              </li>
+              <li>
+                মেনু থেকে <b>Extensions &gt; Apps Script</b> এ ক্লিক করুন।
+              </li>
+              <li>
+                উপরে <b>“স্ক্রিপ্ট টেমপ্লেট কোড”</b> বাটনে ক্লিক করে কোডটি কপি করে Apps Script এ পেস্ট করুন।
+              </li>
+              <li>
+                <b>Deploy &gt; New deployment &gt; Web app</b> সিলেক্ট করুন। <i>Who has access</i> ড্রপডাউনে <b>Anyone</b> সিলেক্ট করে Deploy দিন।
+              </li>
+              <li>
+                পাওয়া Web app URL-টি কপি করে উপরের বক্সে পেস্ট করে <b>“Webhook সংরক্ষণ করুন”</b> বাটনে ক্লিক করুন।
+              </li>
+            </ol>
+          </div>
         </div>
       )}
     </div>

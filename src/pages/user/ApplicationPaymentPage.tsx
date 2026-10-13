@@ -16,6 +16,7 @@ import { PaymentHeaderReference } from '../../components/payment/PaymentHeaderRe
 import { useToast } from '../../components/common/Toast';
 import { invalidateCache } from '../../services/cache';
 import { isValidMobile } from '../../utils/auth';
+import { submitJobApplication } from '../../services/applicationsService';
 import { Copy, Check, AlertCircle, ArrowRight } from 'lucide-react';
 
 export const ApplicationPaymentPage: React.FC = () => {
@@ -121,58 +122,75 @@ export const ApplicationPaymentPage: React.FC = () => {
         setScreenshotUploading(false);
       }
 
-      const trxDocRef = doc(db, 'trxIds', cleanTrx);
-      const appDocRef = doc(db, 'applications', state.appId);
-
-      await runTransaction(db, async (transaction) => {
-        const trxSnap = await transaction.get(trxDocRef);
-        if (trxSnap.exists()) {
-          throw new Error('এই Transaction ID আগেই ব্যবহার হয়েছে!');
-        }
-
-        transaction.set(trxDocRef, {
-          appId: state.appId,
-          uid: user.uid,
-          createdAt: serverTimestamp(),
-        });
-
-        transaction.set(appDocRef, {
-          id: state.appId,
-          uid: user.uid,
-          mobile: state.smsNumber,
-          fullName: state.fullName,
-          jobId: state.jobId,
-          jobTitle: state.jobTitle,
-          applyLink: state.applyLink || '',
-          postName: state.postName,
-          postCount: state.postCount,
-          district: state.district,
-          educationLevel: state.educationLevel,
-          smsNumber: state.smsNumber,
-          termsAccepted: true,
-          status: 'waiting',
-          fee: state.fee,
-          payment: {
-            method,
-            trxId: cleanTrx,
-            senderNumber: cleanSender,
-            hasScreenshot,
-            verified: false,
-          },
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      });
-
-      const notifId = doc(collection(db, 'notifications')).id;
-      await setDoc(doc(db, 'notifications', notifId), {
+      // 1. Submit to Server, Cloudflare R2 and Google Sheets (Zero Firestore quota dependency)
+      const submitPayload = {
+        id: state.appId,
         uid: user.uid,
-        title: 'আবেদন সফলভাবে সাবমিট হয়েছে',
-        body: `আপনার আবেদন (${state.appId}) প্রাপ্ত হয়েছে। পেমেন্ট যাচাই শেষে অপারেটর Teletalk-এ আবেদন সম্পন্ন করবেন।`,
-        appId: state.appId,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
+        mobile: state.smsNumber,
+        fullName: state.fullName,
+        jobId: state.jobId,
+        jobTitle: state.jobTitle,
+        applyLink: state.applyLink || '',
+        postName: state.postName,
+        postCount: state.postCount,
+        district: state.district,
+        educationLevel: state.educationLevel,
+        smsNumber: state.smsNumber,
+        fee: state.fee,
+        payment: {
+          method: method as any,
+          senderNumber: cleanSender,
+          trxId: cleanTrx,
+          amount: state.fee.total,
+          submittedAt: new Date().toISOString(),
+        },
+        hasScreenshot,
+      };
+
+      await submitJobApplication(submitPayload);
+
+      // 2. Non-blocking Firestore transaction backup
+      try {
+        const trxDocRef = doc(db, 'trxIds', cleanTrx);
+        const appDocRef = doc(db, 'applications', state.appId);
+
+        await runTransaction(db, async (transaction) => {
+          const trxSnap = await transaction.get(trxDocRef);
+          if (trxSnap.exists()) {
+            throw new Error('এই Transaction ID আগেই ব্যবহার হয়েছে!');
+          }
+
+          transaction.set(trxDocRef, {
+            appId: state.appId,
+            uid: user.uid,
+            createdAt: serverTimestamp(),
+          });
+
+          transaction.set(appDocRef, {
+            ...submitPayload,
+            termsAccepted: true,
+            status: 'waiting',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+
+        const notifId = doc(collection(db, 'notifications')).id;
+        await setDoc(doc(db, 'notifications', notifId), {
+          uid: user.uid,
+          title: 'আবেদন সফলভাবে সাবমিট হয়েছে',
+          body: `আপনার আবেদন (${state.appId}) প্রাপ্ত হয়েছে। পেমেন্ট যাচাই শেষে অপারেটর Teletalk-এ আবেদন সম্পন্ন করবেন।`,
+          appId: state.appId,
+          read: false,
+          createdAt: serverTimestamp(),
+        }).catch(() => {});
+      } catch (fbErr: any) {
+        if (fbErr?.message?.includes('এই Transaction ID আগেই ব্যবহার হয়েছে')) {
+          setLocalError(fbErr.message);
+          return;
+        }
+        console.warn('Background Firestore sync notice:', fbErr?.message || fbErr);
+      }
 
       invalidateCache('user_');
       invalidateCache('admin_');

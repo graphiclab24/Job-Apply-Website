@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { ExternalLink, AlertTriangle, ArrowRight } from 'lucide-react';
 import { Spinner } from '../../components/common/Spinner';
 
@@ -17,32 +15,7 @@ export const ShortLinkRedirectPage: React.FC = () => {
 
     const cleanCode = code.trim().toLowerCase();
 
-    const fetchAndRedirect = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'short_links', cleanCode));
-        if (snap.exists()) {
-          const data = snap.data();
-          const targetUrl = data.originalUrl || '/';
-
-          // Increment clicks asynchronously
-          updateDoc(doc(db, 'short_links', cleanCode), {
-            clicks: increment(1),
-            lastClickedAt: serverTimestamp(),
-          }).catch(() => {});
-
-          // Fast direct redirect
-          window.location.replace(targetUrl);
-          return;
-        }
-
-        setError('এই শর্ট লিংকটি খুঁজে পাওয়া যায়নি অথবা মুছে ফেলা হয়েছে।');
-      } catch (err: any) {
-        console.warn('Redirect error:', err);
-        setError('লিংকটি লোড করতে সমস্যা হয়েছে।');
-      }
-    };
-
-    fetchAndRedirect();
+    window.location.replace(`/s/${encodeURIComponent(cleanCode)}`);
   }, [code]);
 
   if (error) {

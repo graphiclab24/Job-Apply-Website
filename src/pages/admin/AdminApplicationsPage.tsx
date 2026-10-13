@@ -18,6 +18,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { canTransitionStatus, createUserNotification } from '../../utils/statusTransitions';
+import { updateApplicationStatus, fetchApplications } from '../../services/applicationsService';
 import { ApplicationCardItem } from '../../components/admin/ApplicationCardItem';
 import {
   RejectModal,
@@ -182,11 +183,18 @@ export const AdminApplicationsPage: React.FC = () => {
   const handleRejectConfirm = async (reason: string) => {
     if (!activeApp) return;
     try {
-      await updateDoc(doc(db, 'applications', activeApp.id), {
+      await updateApplicationStatus(activeApp.id, {
         status: 'rejected',
         rejectReason: reason,
-        updatedAt: serverTimestamp(),
       });
+
+      try {
+        await updateDoc(doc(db, 'applications', activeApp.id), {
+          status: 'rejected',
+          rejectReason: reason,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
 
       await createUserNotification(
         activeApp.uid,
@@ -219,12 +227,19 @@ export const AdminApplicationsPage: React.FC = () => {
   const handleUploadSoftCopy = async (result: { hasFile: boolean; driveUrl?: string }) => {
     if (!activeApp) return;
     try {
-      await updateDoc(doc(db, 'applications', activeApp.id), {
+      await updateApplicationStatus(activeApp.id, {
         status: 'checking',
-        hasSoftCopy: result.hasFile,
-        softCopyDriveUrl: result.driveUrl || null,
-        updatedAt: serverTimestamp(),
+        softCopyUrl: result.driveUrl || '',
       });
+
+      try {
+        await updateDoc(doc(db, 'applications', activeApp.id), {
+          status: 'checking',
+          hasSoftCopy: result.hasFile,
+          softCopyDriveUrl: result.driveUrl || null,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
 
       await createUserNotification(
         activeApp.uid,
@@ -242,14 +257,21 @@ export const AdminApplicationsPage: React.FC = () => {
   const handleCompletePaid = async (result: { hasFile: boolean; driveUrl?: string }) => {
     if (!activeApp) return;
     try {
-      await updateDoc(doc(db, 'applications', activeApp.id), {
+      await updateApplicationStatus(activeApp.id, {
         status: 'applied',
-        hasPaidCopy: result.hasFile,
-        paidCopyDriveUrl: result.driveUrl || null,
-        hasSoftCopy: false,
-        softCopyDriveUrl: null,
-        updatedAt: serverTimestamp(),
+        paidCopyUrl: result.driveUrl || '',
       });
+
+      try {
+        await updateDoc(doc(db, 'applications', activeApp.id), {
+          status: 'applied',
+          hasPaidCopy: result.hasFile,
+          paidCopyDriveUrl: result.driveUrl || null,
+          hasSoftCopy: false,
+          softCopyDriveUrl: null,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
 
       await createUserNotification(
         activeApp.uid,
