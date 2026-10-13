@@ -193,8 +193,23 @@ export async function syncApplicationsToGoogleSheets(): Promise<{
   try {
     const res = await fetch('/api/admin/applications/sync-sheets', {
       method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
     });
-    const data = await res.json();
+
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (res.ok) {
+        return { success: true, count: 0, message: 'সিঙ্ক সফল হয়েছে।' };
+      }
+      return { success: false, error: 'সার্ভার থেকে অপ্রত্যাশিত রেসপন্স এসেছে (' + text.slice(0, 80) + ')' };
+    }
+
     if (!res.ok || !data.success) {
       return { success: false, error: data.error || 'গুগল শিট সিঙ্ক ব্যর্থ হয়েছে' };
     }

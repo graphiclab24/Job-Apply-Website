@@ -38,6 +38,15 @@ const APPLICATIONS_FILE = path.join(DATA_DIR, 'applications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
 
+const DEFAULT_R2_CONFIG = {
+  provider: 'cloudflare-r2' as const,
+  accountId: '2da18d6e98a95996350fb9f05028427d',
+  accessKeyId: '38136facb6e57ada1c351859f828376c',
+  secretAccessKey: '82ee5f5d7c06a77ad9867accbd285a6a9e4bb8077d9ab73b3e6812979905b3a0',
+  bucketName: 'bdjob-files',
+  publicUrl: 'https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev',
+};
+
 const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbw-Ol_W6SYXjRGjM-aKgDpVGaNgOlrsIkQM3CVet23eqNA-G_Wa7uqmbbi39vwC2iwC/exec';
 
@@ -53,12 +62,12 @@ interface StorageConfig {
 
 function getStorageConfig(): StorageConfig {
   let conf: StorageConfig = {
-    provider: 'local',
-    accountId: process.env.R2_ACCOUNT_ID || '',
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    bucketName: process.env.R2_BUCKET_NAME || '',
-    publicUrl: process.env.R2_PUBLIC_URL || '',
+    provider: 'cloudflare-r2',
+    accountId: process.env.R2_ACCOUNT_ID || DEFAULT_R2_CONFIG.accountId,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || DEFAULT_R2_CONFIG.accessKeyId,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || DEFAULT_R2_CONFIG.secretAccessKey,
+    bucketName: process.env.R2_BUCKET_NAME || DEFAULT_R2_CONFIG.bucketName,
+    publicUrl: process.env.R2_PUBLIC_URL || DEFAULT_R2_CONFIG.publicUrl,
     appsScriptUrl: process.env.APPS_SCRIPT_URL || DEFAULT_APPS_SCRIPT_URL,
   };
 
@@ -69,16 +78,15 @@ function getStorageConfig(): StorageConfig {
     }
   } catch {}
 
-  if (!conf.appsScriptUrl || conf.appsScriptUrl.trim() === '') {
-    conf.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
-  }
+  // Guarantee permanent fallbacks
+  if (!conf.accountId) conf.accountId = DEFAULT_R2_CONFIG.accountId;
+  if (!conf.accessKeyId) conf.accessKeyId = DEFAULT_R2_CONFIG.accessKeyId;
+  if (!conf.secretAccessKey) conf.secretAccessKey = DEFAULT_R2_CONFIG.secretAccessKey;
+  if (!conf.bucketName) conf.bucketName = DEFAULT_R2_CONFIG.bucketName;
+  if (!conf.publicUrl) conf.publicUrl = DEFAULT_R2_CONFIG.publicUrl;
+  if (!conf.appsScriptUrl) conf.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
 
-  if (conf.accountId && conf.accessKeyId && conf.secretAccessKey && conf.bucketName) {
-    conf.provider = 'cloudflare-r2';
-  } else {
-    conf.provider = 'local';
-  }
-
+  conf.provider = 'cloudflare-r2';
   return conf;
 }
 
@@ -1668,25 +1676,49 @@ app.post('/api/applications/test-sheets', async (req: Request, res: Response) =>
 app.post('/api/admin/applications/sync-sheets', async (_req: Request, res: Response) => {
   try {
     const conf = getStorageConfig();
-    const webhookUrl = conf.appsScriptUrl || process.env.APPS_SCRIPT_URL;
-    if (!webhookUrl) {
-      return res.status(400).json({ success: false, error: 'Webhook URL কনফিগার করা নেই' });
-    }
+    const webhookUrl = conf.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL;
 
-    const apps = getStoredApplications();
+    let apps = getStoredApplications();
+
+    // If local disk is empty, load from Firestore
     if (apps.length === 0) {
-      return res.json({ success: true, count: 0, message: 'সিঙ্ক করার মতো কোনো আবেদন নেই' });
+      try {
+        const snap = await getDocs(collection(db, 'applications'));
+        apps = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (apps.length > 0) {
+          saveStoredApplications(apps);
+        }
+      } catch (err: any) {
+        console.warn('Firestore fallback sync notice:', err?.message || err);
+      }
     }
 
-    const syncRes = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'bulk_sync',
-        applications: apps,
-      }),
-      redirect: 'follow',
-    });
+    if (apps.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+        syncedCount: 0,
+        message: 'ডাটাবেজে বর্তমানে কোনো আবেদন সংরক্ষিত নেই (শূন্য আবেদন)।',
+      });
+    }
+
+    let syncRes: any;
+    try {
+      syncRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk_sync',
+          applications: apps,
+        }),
+        redirect: 'follow',
+      });
+    } catch (fetchErr: any) {
+      return res.status(500).json({
+        success: false,
+        error: 'Google Sheet Webhook-এ কানেক্ট করা যায়নি: ' + (fetchErr?.message || fetchErr),
+      });
+    }
 
     const text = await syncRes.text();
     let data: any = null;
@@ -1701,6 +1733,7 @@ app.post('/api/admin/applications/sync-sheets', async (_req: Request, res: Respo
       message: data?.message || `মোট ${apps.length}টি আবেদন গুগল শিটে সফলভাবে পাঠানো হয়েছে।`,
     });
   } catch (err: any) {
+    console.error('Sync sheets error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'সিঙ্ক ব্যর্থ হয়েছে' });
   }
 });
