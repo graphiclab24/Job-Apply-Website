@@ -23,12 +23,13 @@ import {
   testAppsScriptWebhook,
   syncApplicationsToGoogleSheets,
   fetchApplications,
+  DEFAULT_APPS_SCRIPT_URL,
 } from '../../services/applicationsService';
 
 export const AdminGoogleSheetsPage: React.FC = () => {
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [isConfigured, setIsConfigured] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [webhookUrl, setWebhookUrl] = useState(DEFAULT_APPS_SCRIPT_URL);
+  const [isConfigured, setIsConfigured] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -373,10 +374,24 @@ export const AdminGoogleSheetsPage: React.FC = () => {
                   ২
                 </span>
                 <div>
-                  <p className="font-bold text-gray-800">Apps Script কোড পেস্ট করুন</p>
+                  <p className="font-bold text-gray-800">Apps Script ওপেন করুন ও কোড পেস্ট করুন</p>
                   <p className="mt-0.5 text-gray-500">
                     শিটের মেনু থেকে <b>Extensions &gt; Apps Script</b> এ ক্লিক করুন। আগের ডিফল্ট কোড মুছে ডানপাশের বক্সের সম্পূর্ণ স্ক্রিপ্ট কোডটি পেস্ট করুন।
                   </p>
+                  <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                    💡 <b>যদি “Drive: Sorry, unable to open the file at this time” ইরর আসে:</b>
+                    <br />
+                    ব্রাউজারে একাধিক গুগল অ্যাকাউন্ট লগইন থাকলে গুগল এই ইরর দেখায়। সহজ সমাধান: নতুন ট্যাবে সরাসরি{' '}
+                    <a
+                      href="https://script.new"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold underline text-amber-950 inline-flex items-center gap-0.5"
+                    >
+                      script.new <ExternalLink className="w-2.5 h-2.5" />
+                    </a>{' '}
+                    ওপেন করুন, কোডটি পেস্ট করুন এবং কোডের ৫ম লাইনে <code>SPREADSHEET_ID_OR_URL</code> এর জায়গায় আপনার গুগল শিটের লিংকটি দিন! অথবা একটি Incognito (গোপন) উইন্ডো ব্যবহার করুন।
+                  </div>
                 </div>
               </div>
 

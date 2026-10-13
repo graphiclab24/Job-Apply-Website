@@ -38,6 +38,9 @@ const APPLICATIONS_FILE = path.join(DATA_DIR, 'applications.json');
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
 
+const DEFAULT_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbw-Ol_W6SYXjRGjM-aKgDpVGaNgOlrsIkQM3CVet23eqNA-G_Wa7uqmbbi39vwC2iwC/exec';
+
 interface StorageConfig {
   provider: 'cloudflare-r2' | 'local';
   accountId?: string;
@@ -56,6 +59,7 @@ function getStorageConfig(): StorageConfig {
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
     bucketName: process.env.R2_BUCKET_NAME || '',
     publicUrl: process.env.R2_PUBLIC_URL || '',
+    appsScriptUrl: process.env.APPS_SCRIPT_URL || DEFAULT_APPS_SCRIPT_URL,
   };
 
   try {
@@ -64,6 +68,10 @@ function getStorageConfig(): StorageConfig {
       conf = { ...conf, ...fileData };
     }
   } catch {}
+
+  if (!conf.appsScriptUrl || conf.appsScriptUrl.trim() === '') {
+    conf.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
+  }
 
   if (conf.accountId && conf.accessKeyId && conf.secretAccessKey && conf.bucketName) {
     conf.provider = 'cloudflare-r2';

@@ -17,12 +17,30 @@
  * 9. Click "Deploy", copy the "Web app URL" (e.g., https://script.google.com/macros/s/.../exec)
  * 10. Paste this URL in your BDJobApply Admin Panel under "Google Sheets Webhook Settings"!
  */
+// [ঐচ্ছিক / OPTIONAL]:
+// যদি Extensions -> Apps Script ওপেন করতে সমস্যা হয় (যেমন মাল্টিপল গুগল একাউন্ট থাকলে):
+// সরাসরি https://script.new এ গিয়ে এই স্ক্রিপ্ট পেস্ট করুন এবং নিচে আপনার Google Sheet-এর URL পেস্ট করুন:
+var SPREADSHEET_ID_OR_URL = ""; 
+
+function getTargetSpreadsheet() {
+  if (SPREADSHEET_ID_OR_URL && SPREADSHEET_ID_OR_URL.trim() !== "") {
+    var raw = SPREADSHEET_ID_OR_URL.trim();
+    if (raw.indexOf("http") === 0) {
+      return SpreadsheetApp.openByUrl(raw);
+    }
+    return SpreadsheetApp.openById(raw);
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
 
 function doPost(e) {
   try {
     var rawData = e.postData.contents;
     var data = JSON.parse(rawData);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getTargetSpreadsheet();
+    if (!ss) {
+      throw new Error("Google Spreadsheet পাওয়া যায়নি। দয়া করে স্ক্রিপ্টের ৫ম লাইনে SPREADSHEET_ID_OR_URL এ আপনার Sheet URL দিন।");
+    }
     var sheet = ss.getSheetByName("Applications");
     
     if (!sheet) {
@@ -140,7 +158,11 @@ function doPost(e) {
 
 function doGet(e) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getTargetSpreadsheet();
+    if (!ss) {
+      return ContentService.createTextOutput(JSON.stringify({ applications: [], error: "No spreadsheet found" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     var sheet = ss.getSheetByName("Applications");
     if (!sheet) {
       return ContentService.createTextOutput(JSON.stringify({ applications: [] }))

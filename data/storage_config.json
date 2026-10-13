@@ -4,5 +4,6 @@
   "accessKeyId": "38136facb6e57ada1c351859f828376c",
   "secretAccessKey": "82ee5f5d7c06a77ad9867accbd285a6a9e4bb8077d9ab73b3e6812979905b3a0",
   "bucketName": "bdjob-files",
-  "publicUrl": "https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev"
+  "publicUrl": "https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev",
+  "appsScriptUrl": "https://script.google.com/macros/s/AKfycbw-Ol_W6SYXjRGjM-aKgDpVGaNgOlrsIkQM3CVet23eqNA-G_Wa7uqmbbi39vwC2iwC/exec"
 }

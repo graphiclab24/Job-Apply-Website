@@ -122,6 +122,9 @@ export async function updateApplicationStatus(
   }
 }
 
+export const DEFAULT_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbw-Ol_W6SYXjRGjM-aKgDpVGaNgOlrsIkQM3CVet23eqNA-G_Wa7uqmbbi39vwC2iwC/exec';
+
 /**
  * Get Google Apps Script Webhook config
  */
@@ -129,10 +132,14 @@ export async function getAppsScriptConfig(): Promise<{ configured: boolean; webh
   try {
     const res = await fetch('/api/applications/config');
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      return {
+        configured: Boolean(data.webhookUrl || DEFAULT_APPS_SCRIPT_URL),
+        webhookUrl: data.webhookUrl || DEFAULT_APPS_SCRIPT_URL,
+      };
     }
   } catch {}
-  return { configured: false, webhookUrl: '' };
+  return { configured: true, webhookUrl: DEFAULT_APPS_SCRIPT_URL };
 }
 
 /**

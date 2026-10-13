@@ -43,12 +43,13 @@ import {
   saveAppsScriptConfig,
   testAppsScriptWebhook,
   syncApplicationsToGoogleSheets,
+  DEFAULT_APPS_SCRIPT_URL,
 } from '../../services/applicationsService';
 
 export const AdminGoogleDrivePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'r2' | 'drive' | 'sheets'>('r2');
-  const [appsScriptUrl, setAppsScriptUrl] = useState('');
-  const [appsScriptConfigured, setAppsScriptConfigured] = useState(false);
+  const [appsScriptUrl, setAppsScriptUrl] = useState(DEFAULT_APPS_SCRIPT_URL);
+  const [appsScriptConfigured, setAppsScriptConfigured] = useState(true);
   const [savingAppsScript, setSavingAppsScript] = useState(false);
   const [testingAppsScript, setTestingAppsScript] = useState(false);
   const [syncingAppsScript, setSyncingAppsScript] = useState(false);
