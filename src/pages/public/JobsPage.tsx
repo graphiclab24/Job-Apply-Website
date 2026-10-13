@@ -15,6 +15,7 @@ import { db } from '../../services/firebase';
 import { getCached, setCached, precacheJob, getCachedWithSWR, prefetchJobDetail } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
+import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 
@@ -23,10 +24,12 @@ const ITEMS_PER_PAGE = 20;
 export const JobsPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     const page1 = getCached<JobCircular[]>('jobs_page_1');
-    if (page1 && page1.length >= 8) return page1;
-    return DEFAULT_JOBS;
+    if (page1 && page1.length > 0) {
+      return page1.filter((j) => !isDummyJob(j));
+    }
+    return [];
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => jobs.length === 0);
   const [searchTerm, setSearchTerm] = useState(() => {
     return new URLSearchParams(window.location.search).get('search') || '';
   });
@@ -41,8 +44,9 @@ export const JobsPage: React.FC = () => {
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
     const cached = getCached<JobCircular[]>(cacheKey);
 
-    if (cached && cached.length >= 8) {
-      setJobs(cached);
+    if (cached && cached.length > 0) {
+      const clean = cached.filter((j) => !isDummyJob(j));
+      setJobs(clean);
       setLoading(false);
       return;
     }
@@ -54,14 +58,15 @@ export const JobsPage: React.FC = () => {
       );
       if (apiRes.ok) {
         const data = await apiRes.json();
-        if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
-          setJobs(data.jobs);
+        if (Array.isArray(data?.jobs)) {
+          const cleanJobs = data.jobs.filter((j: any) => !isDummyJob(j));
+          setJobs(cleanJobs);
           setHasMore(Boolean(data.hasMore));
-          setCached(cacheKey, data.jobs);
+          setCached(cacheKey, cleanJobs);
           if (page === 1 && categoryFilter === 'all' && !searchTerm) {
-            setCached('jobs_page_1', data.jobs);
+            setCached('jobs_page_1', cleanJobs);
           }
-          data.jobs.forEach(precacheJob);
+          cleanJobs.forEach(precacheJob);
           setLoading(false);
           return;
         }
@@ -75,20 +80,21 @@ export const JobsPage: React.FC = () => {
       const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
       if (r2Res.ok) {
         let r2Jobs = await r2Res.json();
-        if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
+        if (Array.isArray(r2Jobs)) {
+          let cleanR2 = r2Jobs.filter((j: any) => !isDummyJob(j));
           if (categoryFilter && categoryFilter !== 'all') {
-            r2Jobs = r2Jobs.filter((j: any) =>
+            cleanR2 = cleanR2.filter((j: any) =>
               categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
             );
           }
           if (searchTerm) {
-            r2Jobs = r2Jobs.filter((j: any) =>
+            cleanR2 = cleanR2.filter((j: any) =>
               j.title?.toLowerCase().includes(searchTerm.toLowerCase())
             );
           }
-          setJobs(r2Jobs);
+          setJobs(cleanR2);
           setHasMore(false);
-          setCached(cacheKey, r2Jobs);
+          setCached(cacheKey, cleanR2);
           setLoading(false);
           return;
         }
@@ -167,7 +173,9 @@ export const JobsPage: React.FC = () => {
 
   const now = new Date();
 
-  const filteredJobs = (jobs && jobs.length > 0 ? jobs : DEFAULT_JOBS).filter((job) => {
+  const filteredJobs = (jobs || [])
+    .filter((j) => !isDummyJob(j))
+    .filter((job) => {
     const term = searchTerm.toLowerCase().trim();
     const matchesSearch =
       !term ||

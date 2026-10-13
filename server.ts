@@ -34,6 +34,8 @@ const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
 const DEFAULT_JOBS_FILE = path.join(DATA_DIR, 'default_jobs.json');
 const SHORT_LINKS_FILE = path.join(DATA_DIR, 'short_links.json');
 const STORAGE_CONFIG_FILE = path.join(DATA_DIR, 'storage_config.json');
+const APPLICATIONS_FILE = path.join(DATA_DIR, 'applications.json');
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 
 interface StorageConfig {
   provider: 'cloudflare-r2' | 'local';
@@ -42,6 +44,7 @@ interface StorageConfig {
   secretAccessKey?: string;
   bucketName?: string;
   publicUrl?: string;
+  appsScriptUrl?: string;
 }
 
 function getStorageConfig(): StorageConfig {
@@ -82,19 +85,47 @@ function getR2Client(conf: StorageConfig): S3Client | null {
   });
 }
 
+const DUMMY_IDS = new Set([
+  'railway-assistant-station-master-2026',
+  'bangladesh-bank-officer-general-2026',
+  'reb-assistant-junior-engineer-2026',
+  'dgfp-family-planning-circular-2026',
+  'brac-programme-organizer-2026',
+  'asa-credit-officer-circular-2026',
+  'beximco-group-management-executive-2026',
+  'walton-service-sales-officer-2026',
+  'pran-rfl-territory-manager-2026',
+  'square-pharma-medical-promotion-officer-2026',
+  'incepta-pharma-qc-officer-2026',
+]);
+
+function isDummyJob(job: any): boolean {
+  if (!job) return true;
+  if (DUMMY_IDS.has(job.id) || DUMMY_IDS.has(job.slug)) return true;
+  const title = String(job.title || '');
+  return (
+    title.includes('বেক্সিমকো') ||
+    title.includes('ওয়ালটন') ||
+    title.includes('প্রাণ-আরএফএল') ||
+    title.includes('স্কয়ার') ||
+    title.includes('ইনসেপ্টা') ||
+    title.includes('আশা (ASA)') ||
+    title.includes('বাংলাদেশ রেলওয়ে') ||
+    title.includes('বাংলাদেশ ব্যাংক সহকারী পরিচালক') ||
+    title.includes('পল্লী বিদ্যুতায়ন বোর্ড') ||
+    title.includes('পরিবার পরিকল্পনা অধিদপ্তর') ||
+    title.includes('ব্র্যাক (BRAC) কর্মসূচি সংগঠক')
+  );
+}
+
 function getStoredJobs(): any[] {
   try {
     if (fs.existsSync(JOBS_FILE)) {
       const content = fs.readFileSync(JOBS_FILE, 'utf8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  try {
-    if (fs.existsSync(DEFAULT_JOBS_FILE)) {
-      const content = fs.readFileSync(DEFAULT_JOBS_FILE, 'utf8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((j) => !isDummyJob(j));
+      }
     }
   } catch {}
   return [];
@@ -106,6 +137,78 @@ function saveStoredJobs(jobs: any[]) {
     fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
   } catch (err) {
     console.warn('Failed to save jobs to disk:', err);
+  }
+}
+
+function getStoredApplications(): any[] {
+  try {
+    if (fs.existsSync(APPLICATIONS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(APPLICATIONS_FILE, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
+}
+
+function saveStoredApplications(apps: any[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(APPLICATIONS_FILE, JSON.stringify(apps, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to save applications:', err);
+  }
+}
+
+async function syncApplicationsToR2(apps: any[]) {
+  const conf = getStorageConfig();
+  if (conf.provider !== 'cloudflare-r2' || !conf.bucketName) return;
+  const s3 = getR2Client(conf);
+  if (!s3) return;
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: conf.bucketName,
+        Key: 'applications.json',
+        Body: JSON.stringify(apps, null, 2),
+        ContentType: 'application/json',
+      })
+    );
+  } catch (e) {
+    console.warn('R2 applications sync notice:', e);
+  }
+}
+
+async function forwardToGoogleSheetsWebhook(appData: any) {
+  const conf = getStorageConfig();
+  const webhookUrl = conf.appsScriptUrl || process.env.APPS_SCRIPT_URL;
+  if (!webhookUrl) return;
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(appData),
+    });
+  } catch (err: any) {
+    console.warn('Google Sheets Webhook notice:', err?.message || err);
+  }
+}
+
+function getStoredProfiles(): Record<string, any> {
+  try {
+    if (fs.existsSync(PROFILES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf8'));
+      if (typeof data === 'object' && data !== null) return data;
+    }
+  } catch {}
+  return {};
+}
+
+function saveStoredProfiles(profiles: Record<string, any>) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to save profiles:', err);
   }
 }
 
@@ -234,10 +337,8 @@ async function getAllJobsFromServer(): Promise<any[]> {
     }
   }
 
-  // If still empty, fall back to default
-  if (jobs.length === 0) {
-    jobs = getStoredJobs();
-  }
+  // Ensure zero dummy jobs are ever returned
+  jobs = (jobs || []).filter((j) => !isDummyJob(j));
 
   serverAllJobsCache = { data: jobs, timestamp: Date.now() };
 

@@ -10,11 +10,13 @@ import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
+import { recoverLocalJobs, isDummyJob } from '../../utils/recoverLocalJobs';
 import { Plus, Edit, Trash2, ExternalLink, Calendar, Send, CloudUpload, RefreshCw } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
-    return getCached<JobCircular[]>('admin_jobs') || [];
+    const cached = getCached<JobCircular[]>('admin_jobs') || [];
+    return cached.filter((j) => !isDummyJob(j));
   });
   const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('admin_jobs'));
   const [syncingR2, setSyncingR2] = useState(false);
@@ -47,10 +49,11 @@ export const AdminJobsListPage: React.FC = () => {
         const res = await fetch('/api/jobs?limit=50');
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
-            setJobs(data.jobs);
-            setCached('admin_jobs', data.jobs);
-            data.jobs.forEach(precacheJob);
+          if (Array.isArray(data?.jobs)) {
+            const clean = data.jobs.filter((j: any) => !isDummyJob(j));
+            setJobs(clean);
+            setCached('admin_jobs', clean);
+            clean.forEach(precacheJob);
             setLoading(false);
             return;
           }
@@ -62,10 +65,11 @@ export const AdminJobsListPage: React.FC = () => {
         const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
         if (r2Res.ok) {
           const r2Data = await r2Res.json();
-          if (Array.isArray(r2Data) && r2Data.length > 0) {
-            setJobs(r2Data);
-            setCached('admin_jobs', r2Data);
-            r2Data.forEach(precacheJob);
+          if (Array.isArray(r2Data)) {
+            const clean = r2Data.filter((j: any) => !isDummyJob(j));
+            setJobs(clean);
+            setCached('admin_jobs', clean);
+            clean.forEach(precacheJob);
             setLoading(false);
             return;
           }
@@ -76,7 +80,9 @@ export const AdminJobsListPage: React.FC = () => {
       try {
         const snap = await getDocs(collection(db, 'jobs'));
         if (!snap.empty) {
-          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobCircular));
+          const list = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as JobCircular))
+            .filter((j) => !isDummyJob(j));
           setJobs(list);
           setCached('admin_jobs', list);
           list.forEach(precacheJob);
@@ -90,7 +96,7 @@ export const AdminJobsListPage: React.FC = () => {
       // 3. Fallback to cached jobs
       const cached = getCached<JobCircular[]>('admin_jobs');
       if (cached && cached.length > 0) {
-        setJobs(cached);
+        setJobs(cached.filter((j) => !isDummyJob(j)));
       }
     } catch (err) {
       console.warn('Jobs fetch catch notice:', err);
@@ -100,6 +106,12 @@ export const AdminJobsListPage: React.FC = () => {
   };
 
   useEffect(() => {
+    recoverLocalJobs().then((count) => {
+      if (count > 0) {
+        success(`${count}টি সার্কুলার লোকাল ক্যাশ থেকে উদ্ধার করে R2-তে সংরক্ষিত হয়েছে!`);
+        fetchJobs();
+      }
+    });
     fetchJobs();
   }, []);
 

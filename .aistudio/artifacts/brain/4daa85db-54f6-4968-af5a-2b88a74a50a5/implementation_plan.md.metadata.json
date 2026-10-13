@@ -1,0 +1,6 @@
+{
+  "summary": "Architecture plan to migrate all job data and applicant submissions to Cloudflare R2 CDN and Google Sheets Apps Script webhook, restricting Firebase exclusively to User Authentication for zero-cost operation at 1M+ user scale with instant loading and guaranteed immediate admin list updates.",
+  "updatedAt": "2026-10-13T16:00:38.128173629Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

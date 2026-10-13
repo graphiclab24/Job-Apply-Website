@@ -6,6 +6,7 @@ import { db } from '../../services/firebase';
 import { getFeedLatest, FeedJobSummary } from '../../services/feed';
 import { getCached, setCached, precacheJob, prefetchJobDetail } from '../../services/cache';
 import { DEFAULT_FEED_JOBS } from '../../data/defaultJobs';
+import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
@@ -14,14 +15,16 @@ import { ArrowRight, Calendar, Sparkles, Award } from 'lucide-react';
 export const HomePage: React.FC = () => {
   const [jobs, setJobs] = useState<FeedJobSummary[]>(() => {
     const cached = getCached<FeedJobSummary[]>('feed_latest');
-    if (cached && cached.length >= 8) return cached;
-    return DEFAULT_FEED_JOBS;
+    if (cached && cached.length > 0) {
+      return cached.filter((j) => !isDummyJob(j));
+    }
+    return [];
   });
   const [examNotices, setExamNotices] = useState<ExamNotice[]>(() => {
     return getCached<ExamNotice[]>('exams_home') || [];
   });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => jobs.length === 0);
 
   useEffect(() => {
     let isMounted = true;
@@ -29,15 +32,16 @@ export const HomePage: React.FC = () => {
     // 1. Fetch Feed Jobs with ultra-fast SWR (Edge API / RAM Cache ~2ms)
     getFeedLatest(true)
       .then((feedPosts) => {
-        if (isMounted && feedPosts && feedPosts.length > 0) {
-          setJobs(feedPosts);
-          feedPosts.forEach(precacheJob);
+        if (isMounted) {
+          const clean = (feedPosts || []).filter((j) => !isDummyJob(j));
+          setJobs(clean);
+          clean.forEach(precacheJob);
 
           // Speculatively prefetch full circular details of top jobs during idle time
-          if (typeof window !== 'undefined') {
+          if (typeof window !== 'undefined' && clean.length > 0) {
             const idle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1000));
             idle(() => {
-              feedPosts.slice(0, 4).forEach((j) => prefetchJobDetail(j.slug || j.id));
+              clean.slice(0, 4).forEach((j) => prefetchJobDetail(j.slug || j.id));
             });
           }
         }
