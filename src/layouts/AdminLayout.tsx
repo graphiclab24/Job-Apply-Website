@@ -18,6 +18,7 @@ import {
   HardDrive,
   Link2,
   FileImage,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -56,6 +57,7 @@ export const AdminLayout: React.FC = () => {
         { to: '/admin/shortener', label: 'URL শর্টনার', icon: Link2 },
         { to: '/admin/pdf-converter', label: 'PDF to JPG কনভার্টার', icon: FileImage },
         { to: '/admin/settings/payment', label: 'পেমেন্ট সেটিংস', icon: Settings },
+        { to: '/admin/settings/google-sheets', label: 'গুগল শিট (Apps Script)', icon: FileSpreadsheet },
         { to: '/admin/storage', label: 'ক্লাউড স্টোরেজ (R2)', icon: HardDrive },
         { to: '/admin/export', label: 'ফাইল এক্সপোর্ট', icon: Download },
       ],

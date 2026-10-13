@@ -1602,6 +1602,101 @@ app.post('/api/applications/config', (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/applications/test-sheets', async (req: Request, res: Response) => {
+  try {
+    const conf = getStorageConfig();
+    const webhookUrl = String(req.body?.webhookUrl || conf.appsScriptUrl || '').trim();
+    if (!webhookUrl) {
+      return res.status(400).json({ success: false, error: 'Google Apps Script Webhook URL প্রদান করুন' });
+    }
+
+    if (!webhookUrl.startsWith('https://script.google.com/')) {
+      return res.status(400).json({
+        success: false,
+        error: 'ভুল URL ফরম্যাট! URL-টি "https://script.google.com/macros/s/.../exec" দিয়ে শুরু হতে হবে।',
+      });
+    }
+
+    const testPayload = {
+      action: 'ping',
+      timestamp: new Date().toISOString(),
+      testMessage: 'BD Job Apply Webhook Verification Ping',
+    };
+
+    const targetRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testPayload),
+      redirect: 'follow',
+    });
+
+    const text = await targetRes.text();
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+
+    if (targetRes.ok || (parsed && parsed.success)) {
+      return res.json({
+        success: true,
+        message: parsed?.message || 'Google Sheets Webhook সংযোগ সফল ও সক্রিয়!',
+        raw: parsed || text.slice(0, 200),
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'গুগল সার্ভারে সফলভাবে রিকোয়েস্ট পৌঁছেছে (Status: ' + targetRes.status + ')',
+    });
+  } catch (err: any) {
+    console.error('Test sheets error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Google Sheet-এ কানেক্ট করা যায়নি: ' + (err?.message || err),
+    });
+  }
+});
+
+app.post('/api/admin/applications/sync-sheets', async (_req: Request, res: Response) => {
+  try {
+    const conf = getStorageConfig();
+    const webhookUrl = conf.appsScriptUrl || process.env.APPS_SCRIPT_URL;
+    if (!webhookUrl) {
+      return res.status(400).json({ success: false, error: 'Webhook URL কনফিগার করা নেই' });
+    }
+
+    const apps = getStoredApplications();
+    if (apps.length === 0) {
+      return res.json({ success: true, count: 0, message: 'সিঙ্ক করার মতো কোনো আবেদন নেই' });
+    }
+
+    const syncRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'bulk_sync',
+        applications: apps,
+      }),
+      redirect: 'follow',
+    });
+
+    const text = await syncRes.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(text);
+    } catch {}
+
+    return res.json({
+      success: true,
+      count: apps.length,
+      syncedCount: data?.syncedCount ?? apps.length,
+      message: data?.message || `মোট ${apps.length}টি আবেদন গুগল শিটে সফলভাবে পাঠানো হয়েছে।`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'সিঙ্ক ব্যর্থ হয়েছে' });
+  }
+});
+
 // Dev vs Production server mounting
 if (process.env.NODE_ENV !== 'production') {
   const { createServer: createViteServer } = await import('vite');

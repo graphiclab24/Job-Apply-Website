@@ -45,6 +45,14 @@ function doPost(e) {
       ]);
     }
     
+    // Check if it's a test ping
+    if (data.action === "ping") {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        message: "Google Sheet Webhook সক্রিয় ও সঠিকভাবে কানেক্টেড রয়েছে!"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Check if it's a status update
     if (data.action === "update_status" && data.id) {
       var rows = sheet.getDataRange().getValues();
@@ -57,6 +65,43 @@ function doPost(e) {
             .setMimeType(ContentService.MimeType.JSON);
         }
       }
+    }
+
+    // Check if it's a bulk sync
+    if (data.action === "bulk_sync" && Array.isArray(data.applications)) {
+      var existingData = sheet.getDataRange().getValues();
+      var existingIds = {};
+      for (var k = 1; k < existingData.length; k++) {
+        if (existingData[k][0]) existingIds[existingData[k][0]] = true;
+      }
+      var count = 0;
+      for (var j = 0; j < data.applications.length; j++) {
+        var app = data.applications[j];
+        if (!existingIds[app.id]) {
+          sheet.appendRow([
+            app.id,
+            app.createdAt || Utilities.formatDate(new Date(), "GMT+6", "yyyy-MM-dd HH:mm:ss"),
+            app.fullName || "",
+            app.smsNumber || app.mobile || "",
+            app.jobTitle || "",
+            app.postName || "",
+            app.district || "",
+            app.educationLevel || "",
+            (app.fee ? app.fee.total : 0),
+            (app.payment ? app.payment.trxId : ""),
+            (app.payment ? app.payment.senderNumber : ""),
+            app.status || "waiting",
+            app.softCopyUrl || "",
+            app.paidCopyUrl || ""
+          ]);
+          count++;
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        syncedCount: count,
+        message: count + "টি আবেদন গুগল শিটে সিঙ্ক করা হয়েছে।"
+      })).setMimeType(ContentService.MimeType.JSON);
     }
     
     // Append new application row

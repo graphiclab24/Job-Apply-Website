@@ -150,3 +150,54 @@ export async function saveAppsScriptConfig(webhookUrl: string): Promise<boolean>
     return false;
   }
 }
+
+/**
+ * Test Google Apps Script Webhook
+ */
+export async function testAppsScriptWebhook(
+  webhookUrl?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/applications/test-sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || 'Webhook টেস্ট ব্যর্থ হয়েছে' };
+    }
+    return { success: true, message: data.message };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
+  }
+}
+
+/**
+ * Bulk Sync All Existing Applications to Google Sheets
+ */
+export async function syncApplicationsToGoogleSheets(): Promise<{
+  success: boolean;
+  count?: number;
+  syncedCount?: number;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/applications/sync-sheets', {
+      method: 'POST',
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || 'গুগল শিট সিঙ্ক ব্যর্থ হয়েছে' };
+    }
+    return {
+      success: true,
+      count: data.count,
+      syncedCount: data.syncedCount,
+      message: data.message,
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
+  }
+}

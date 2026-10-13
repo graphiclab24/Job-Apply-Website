@@ -45,6 +45,7 @@ const AdminExportPage = lazy(() => import('./pages/admin/AdminExportPage').then(
 const AdminGoogleDrivePage = lazy(() => import('./pages/admin/AdminGoogleDrivePage').then((m) => ({ default: m.AdminGoogleDrivePage })));
 const AdminUrlShortenerPage = lazy(() => import('./pages/admin/AdminUrlShortenerPage').then((m) => ({ default: m.AdminUrlShortenerPage })));
 const AdminPdfConverterPage = lazy(() => import('./pages/admin/AdminPdfConverterPage').then((m) => ({ default: m.AdminPdfConverterPage })));
+const AdminGoogleSheetsPage = lazy(() => import('./pages/admin/AdminGoogleSheetsPage').then((m) => ({ default: m.AdminGoogleSheetsPage })));
 const ShortLinkRedirectPage = lazy(() => import('./pages/public/ShortLinkRedirectPage').then((m) => ({ default: m.ShortLinkRedirectPage })));
 
 // Lightweight Fast Skeleton Fallback
@@ -118,6 +119,8 @@ export default function App() {
                     <Route path="exams" element={<AdminExamsPage />} />
                     <Route path="applications/:step" element={<AdminApplicationsPage />} />
                     <Route path="settings/payment" element={<AdminPaymentSettingsPage />} />
+                    <Route path="settings/google-sheets" element={<AdminGoogleSheetsPage />} />
+                    <Route path="google-sheets" element={<AdminGoogleSheetsPage />} />
                     <Route path="storage" element={<AdminGoogleDrivePage />} />
                     <Route path="export" element={<AdminExportPage />} />
                     <Route path="shortener" element={<AdminUrlShortenerPage />} />

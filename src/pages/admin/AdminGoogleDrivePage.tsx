@@ -38,13 +38,20 @@ import { GoogleSignInButton } from '../../components/common/GoogleSignInButton';
 import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
 import { useToast } from '../../components/common/Toast';
-import { getAppsScriptConfig, saveAppsScriptConfig } from '../../services/applicationsService';
+import {
+  getAppsScriptConfig,
+  saveAppsScriptConfig,
+  testAppsScriptWebhook,
+  syncApplicationsToGoogleSheets,
+} from '../../services/applicationsService';
 
 export const AdminGoogleDrivePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'r2' | 'drive' | 'sheets'>('r2');
   const [appsScriptUrl, setAppsScriptUrl] = useState('');
   const [appsScriptConfigured, setAppsScriptConfigured] = useState(false);
   const [savingAppsScript, setSavingAppsScript] = useState(false);
+  const [testingAppsScript, setTestingAppsScript] = useState(false);
+  const [syncingAppsScript, setSyncingAppsScript] = useState(false);
 
   // Cloudflare R2 State
   const [r2Config, setR2Config] = useState({
@@ -131,6 +138,47 @@ export const AdminGoogleDrivePage: React.FC = () => {
       toastError('সংরক্ষণ ব্যর্থ হয়েছে');
     } finally {
       setSavingAppsScript(false);
+    }
+  };
+
+  const handleTestAppsScript = async () => {
+    if (!appsScriptUrl.trim()) {
+      toastError('প্রথমে Webhook URL প্রদান বা সংরক্ষণ করুন');
+      return;
+    }
+    setTestingAppsScript(true);
+    try {
+      const res = await testAppsScriptWebhook(appsScriptUrl.trim());
+      if (res.success) {
+        setAppsScriptConfigured(true);
+        success(res.message || 'গুগল শিটে সফলভাবে টেস্ট পিং সম্পন্ন হয়েছে!');
+      } else {
+        toastError(res.error || 'টেস্ট সংযোগ ব্যর্থ হয়েছে');
+      }
+    } catch (err: any) {
+      toastError(err?.message || 'টেস্ট সংযোগ ব্যর্থ হয়েছে');
+    } finally {
+      setTestingAppsScript(false);
+    }
+  };
+
+  const handleSyncAppsScript = async () => {
+    if (!appsScriptUrl.trim() && !appsScriptConfigured) {
+      toastError('প্রথমে Webhook URL কনফিগার করুন');
+      return;
+    }
+    setSyncingAppsScript(true);
+    try {
+      const res = await syncApplicationsToGoogleSheets();
+      if (res.success) {
+        success(res.message || 'সকল আবেদন গুগল শিটে সফলভাবে পাঠানো হয়েছে!');
+      } else {
+        toastError(res.error || 'সিঙ্ক ব্যর্থ হয়েছে');
+      }
+    } catch (err: any) {
+      toastError(err?.message || 'সিঙ্ক ব্যর্থ হয়েছে');
+    } finally {
+      setSyncingAppsScript(false);
     }
   };
 
@@ -933,7 +981,32 @@ export const AdminGoogleDrivePage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestAppsScript}
+                    disabled={testingAppsScript || !appsScriptUrl}
+                    icon={testingAppsScript ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
+                    className="text-xs"
+                  >
+                    {testingAppsScript ? 'যাচাই হচ্ছে...' : 'কানেকশন টেস্ট'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncAppsScript}
+                    disabled={syncingAppsScript || !appsScriptUrl}
+                    icon={syncingAppsScript ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5 text-blue-500" />}
+                    className="text-xs"
+                  >
+                    {syncingAppsScript ? 'সিঙ্ক হচ্ছে...' : 'সকল আবেদন শিটে সিঙ্ক'}
+                  </Button>
+                </div>
+
                 <Button
                   type="submit"
                   disabled={savingAppsScript}
