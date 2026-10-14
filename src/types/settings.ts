@@ -13,6 +13,7 @@ export interface ExamNotice {
   category: string;
   content: string;
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface CounterRecord {

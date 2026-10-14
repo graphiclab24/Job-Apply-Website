@@ -5,6 +5,7 @@ import { getFeedLatest, FeedJobSummary } from '../../services/feed';
 import { getCached, setCached, precacheJob, prefetchJobDetail } from '../../services/cache';
 import { DEFAULT_FEED_JOBS } from '../../data/defaultJobs';
 import { isDummyJob } from '../../utils/recoverLocalJobs';
+import { safeFormatBnDate, isJobExpired, getDeadlineDiffMs } from '../../utils/dateUtils';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
@@ -87,16 +88,14 @@ export const HomePage: React.FC = () => {
   const sevenDaysMs = 7 * oneDayMs;
 
   const tomorrowDeadlineJobs = jobs.filter((j) => {
-    if (!j.deadline) return false;
-    const d = j.deadline.toDate ? j.deadline.toDate() : new Date(j.deadline);
-    const diff = d.getTime() - now.getTime();
+    const diff = getDeadlineDiffMs(j.deadline, now);
+    if (diff === null) return false;
     return diff > 0 && diff <= oneDayMs * 1.5;
   });
 
   const thisWeekDeadlineJobs = jobs.filter((j) => {
-    if (!j.deadline) return false;
-    const d = j.deadline.toDate ? j.deadline.toDate() : new Date(j.deadline);
-    const diff = d.getTime() - now.getTime();
+    const diff = getDeadlineDiffMs(j.deadline, now);
+    if (diff === null) return false;
     return diff > oneDayMs * 1.5 && diff <= sevenDaysMs;
   });
 
@@ -244,9 +243,7 @@ export const HomePage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredJobs.map((job) => {
-              const isExpired = job.deadline
-                ? new Date(job.deadline.toDate ? job.deadline.toDate() : job.deadline).getTime() < now.getTime()
-                : false;
+              const isExpired = isJobExpired(job.deadline, now);
 
               return (
                 <Link
@@ -265,7 +262,7 @@ export const HomePage: React.FC = () => {
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
                         {job.category === 'govt' ? 'সরকারি' : 'বেসরকারি/অন্যান্য'}
                       </span>
                       {isExpired ? (
@@ -289,7 +286,7 @@ export const HomePage: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-gray-400" />
                       <span>
-                        শেষ: {job.deadline ? new Date(job.deadline.toDate ? job.deadline.toDate() : job.deadline).toLocaleDateString('bn-BD') : 'বিজ্ঞপ্তি দেখুন'}
+                        শেষ: {safeFormatBnDate(job.deadline)}
                       </span>
                     </div>
                     <span className="font-semibold text-emerald-700">বিস্তারিত →</span>

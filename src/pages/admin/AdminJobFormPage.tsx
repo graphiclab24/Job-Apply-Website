@@ -57,6 +57,7 @@ export const AdminJobFormPage: React.FC = () => {
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(isEdit);
+  const [saving, setSaving] = useState(false);
   const [jobId] = useState<string>(() => {
     if (id) return id;
     try {
@@ -528,10 +529,13 @@ export const AdminJobFormPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !slug) {
-      error('বিজ্ঞপ্তির শিরোনাম ও স্লাগ পূরণ করুন');
+    const effectiveTitle = (title || '').trim();
+    if (!effectiveTitle) {
+      error('বিজ্ঞপ্তির শিরোনাম পূরণ করুন');
       return;
     }
+    const effectiveSlug = (slug || generateSlug(effectiveTitle) || `job-${Date.now()}`).trim();
+    if (!slug) setSlug(effectiveSlug);
 
     setSaving(true);
     try {
@@ -561,8 +565,8 @@ export const AdminJobFormPage: React.FC = () => {
       const pubDate = status === 'scheduled' && publishedAt ? new Date(publishedAt) : new Date();
 
       const jobData: any = {
-        title: title.trim(),
-        slug: slug.trim(),
+        title: effectiveTitle,
+        slug: effectiveSlug,
         category: category || 'govt',
         status: status || 'published',
         content: content || '',

@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
 import { recoverLocalJobs, isDummyJob } from '../../utils/recoverLocalJobs';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
+import { safeFormatBnDate } from '../../utils/dateUtils';
 import { Plus, Edit, Trash2, ExternalLink, Calendar, Send, CloudUpload, RefreshCw } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
@@ -28,15 +29,18 @@ export const AdminJobsListPage: React.FC = () => {
     setSyncingR2(true);
     try {
       const res = await fetch('/api/admin/jobs/sync-r2', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error('সার্ভার থেকে সঠিক সাড়া পাওয়া যায়নি');
+      }
       const data = await res.json();
       if (data.success) {
         success(`Cloudflare R2-তে ${data.count}টি সার্কুলার সফলভাবে সিঙ্ক হয়েছে!`);
         fetchJobs();
       } else {
-        error(data.error || 'R2 সিঙ্ক ব্যর্থ হয়েছে');
+        error(data.error || 'R2 সিঙ্ক করা সম্ভব হয়নি। ক্রেডেনশিয়াল বা বাকেট চেক করুন।');
       }
     } catch (err: any) {
-      error('R2 সার্ভারের সাথে কানেক্ট করা যায়নি');
+      error(err?.message || 'R2 সার্ভারের সাথে কানেক্ট করা যায়নি');
     } finally {
       setSyncingR2(false);
     }
@@ -236,7 +240,7 @@ export const AdminJobsListPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-3.5 text-gray-600 whitespace-nowrap">
-                      {job.deadline ? new Date(job.deadline.toDate ? job.deadline.toDate() : job.deadline).toLocaleDateString('bn-BD') : 'নির্ধারিত নয়'}
+                      {safeFormatBnDate(job.deadline, 'নির্ধারিত নয়')}
                     </td>
                     <td className="p-3.5">
                       {job.applyServiceEnabled ? (

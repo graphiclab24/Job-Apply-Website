@@ -14,7 +14,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '15mb' }));
-app.use(compression());
+app.use(compression() as any);
 
 // Serve local uploaded files statically if local disk storage is used
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
@@ -243,6 +243,12 @@ function saveStoredExams(exams: any[]) {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(EXAMS_FILE, JSON.stringify(exams, null, 2), 'utf8');
+
+    // Also mirror to public folder for static hosting resilience
+    const pubDir = path.join(process.cwd(), 'public');
+    if (fs.existsSync(pubDir)) {
+      fs.writeFileSync(path.join(pubDir, 'exams.json'), JSON.stringify(exams, null, 2), 'utf8');
+    }
   } catch (err) {
     console.warn('Failed to save exams:', err);
   }

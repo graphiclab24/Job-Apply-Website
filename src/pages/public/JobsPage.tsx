@@ -6,6 +6,7 @@ import { getCached, setCached, precacheJob, getCachedWithSWR, prefetchJobDetail 
 import { JobCircular } from '../../types';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import { isDummyJob } from '../../utils/recoverLocalJobs';
+import { safeFormatBnDate, isJobExpired } from '../../utils/dateUtils';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 
@@ -24,12 +25,14 @@ export const JobsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState(() => {
     return new URLSearchParams(window.location.search).get('search') || '';
   });
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => {
+    return new URLSearchParams(window.location.search).get('category') || 'all';
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
-
   const fetchPage = async (page: number, bypassCache = false) => {
+    setLoading(true);
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
     if (!bypassCache) {
       const cached = getCached<JobCircular[]>(cacheKey);
@@ -231,14 +234,20 @@ export const JobsPage: React.FC = () => {
             type="text"
             placeholder="চাকরি বা পদের নাম দিয়ে খুঁজুন..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
           />
         </div>
 
         <select
           value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
+          onChange={(e) => {
+            setCategoryFilter(e.target.value);
+            setCurrentPage(1);
+          }}
           className="px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-emerald-600 sm:w-48"
         >
           <option value="all">সকল ক্যাটাগরি</option>
@@ -293,9 +302,7 @@ export const JobsPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredJobs.map((job) => {
-            const isExpired = job.deadline
-              ? new Date(job.deadline.toDate ? job.deadline.toDate() : job.deadline).getTime() < now.getTime()
-              : false;
+            const isExpired = isJobExpired(job.deadline, now);
 
             return (
               <Link
@@ -344,10 +351,7 @@ export const JobsPage: React.FC = () => {
                   <div className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-gray-400" />
                     <span>
-                      শেষ:{' '}
-                      {job.deadline
-                        ? new Date(job.deadline.toDate ? job.deadline.toDate() : job.deadline).toLocaleDateString('bn-BD')
-                        : 'বিজ্ঞপ্তি দেখুন'}
+                      শেষ: {safeFormatBnDate(job.deadline)}
                     </span>
                   </div>
                   <span className="font-semibold text-emerald-700">আবেদন করুন →</span>
