@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import {
   saveFile,
   getFile,
@@ -10,8 +8,8 @@ import {
   getBestSmartImageMimeType,
   FILE_LIMITS,
 } from '../../services/files';
-import { syncJobToFeed } from '../../services/feed';
 import { invalidateCache } from '../../services/cache';
+import { fetchJobsList, saveJobToWorker } from '../../services/jobsStore';
 import { JobCircular, JobCategory, JobStatus, JobPostItem } from '../../types';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
@@ -58,14 +56,10 @@ export const AdminJobFormPage: React.FC = () => {
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const [jobId] = useState<string>(() => {
-    if (id) return id;
-    try {
-      return doc(collection(db, 'jobs')).id;
-    } catch {
-      return 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-    }
-  });
+  // Firestore ছাড়া নতুন ID: প্রথমবার তৈরি হয়ে এই ফর্মে স্থির থাকে
+  const [jobId] = useState<string>(
+    () => id || 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+  );
 
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
@@ -122,7 +116,7 @@ export const AdminJobFormPage: React.FC = () => {
     }
 
     if (currentMode === 'url' && !urlVal) {
-      error('অনুগ্রহ করে ওয়েবসাইটের লিঙ্ক দিন');
+      error('অনুগ্রহ করে ওয়েবসাইটের লিঙ্ক দিন');
       return;
     }
     if (currentMode === 'text' && !textVal) {
@@ -167,7 +161,7 @@ export const AdminJobFormPage: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         applyExtractedData(data);
-        success('✨ সফলভাবে সকল ফিল্ড পূরণ করা হয়েছে! টাইটেল, স্লাগ, মেটা ট্যাগ ও বিবরণ প্রস্তুত।');
+        success('✨ সফলভাবে সকল ফিল্ড পূরণ করা হয়েছে! টাইটেল, স্লাগ, মেটা ট্যাগ ও বিবরণ প্রস্তুত।');
         setAiAutofillOpen(false);
         setAiError('');
         setAiExtracting(false);
@@ -185,7 +179,7 @@ export const AdminJobFormPage: React.FC = () => {
       try {
         const localData = extractJobLocally(textVal);
         applyExtractedData(localData);
-        success('✨ স্মার্ট ইঞ্জিনের মাধ্যমে সকল ফিল্ড সফলভাবে পূরণ করা হয়েছে!');
+        success('✨ স্মার্ট ইঞ্জিনের মাধ্যমে সকল ফিল্ড সফলভাবে পূরণ করা হয়েছে!');
         setAiAutofillOpen(false);
         setAiError('');
         setAiExtracting(false);
@@ -210,38 +204,12 @@ export const AdminJobFormPage: React.FC = () => {
       try {
         let data: any = null;
 
-        // 1. Fetch from high-speed Server API (handles both id and slug)
+        // R2 jobs.json থেকে (অ্যাডমিনের জন্য ক্যাশ ছাড়া, ড্রাফটসহ সব জব)
         try {
-          const apiRes = await fetch(`/api/jobs/${encodeURIComponent(id)}`);
-          if (apiRes.ok) {
-            const json = await apiRes.json();
-            if (json && json.title) {
-              data = json;
-            }
-          }
-        } catch {}
-
-        // 2. Fetch from Cloudflare R2 CDN if server API didn't have it
-        if (!data) {
-          try {
-            const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
-            if (r2Res.ok) {
-              const r2Jobs = await r2Res.json();
-              if (Array.isArray(r2Jobs)) {
-                data = r2Jobs.find((j: any) => j.id === id || j.slug === id);
-              }
-            }
-          } catch {}
-        }
-
-        // 3. Fallback to Firestore SDK
-        if (!data) {
-          try {
-            const snap = await getDoc(doc(db, 'jobs', id));
-            if (snap.exists()) {
-              data = snap.data();
-            }
-          } catch {}
+          const list = await fetchJobsList(true);
+          data = list.find((j: any) => j.id === id || j.slug === id) || null;
+        } catch (err) {
+          console.warn('Job load failed:', err);
         }
 
         if (data) {
@@ -293,10 +261,10 @@ export const AdminJobFormPage: React.FC = () => {
             } catch {}
           }
         } else {
-          error('বিজ্ঞপ্তিটি খুঁজে পাওয়া যায়নি');
+          error('বিজ্ঞপ্তিটি খুঁজে পাওয়া যায়নি');
         }
       } catch (e) {
-        error('তথ্য লোড করতে সমস্যা হয়েছে');
+        error('তথ্য লোড করতে সমস্যা হয়েছে');
       } finally {
         setLoading(false);
       }
@@ -360,9 +328,9 @@ export const AdminJobFormPage: React.FC = () => {
 
       setHasCover(true);
       setCoverPreview(finalUrl);
-      success('কভার ইমেজ সফলভাবে WebP ফরম্যাটে সেভ হয়েছে (১০০ KB-এর নিচে)');
+      success('কভার ইমেজ সফলভাবে WebP ফরম্যাটে সেভ হয়েছে (১০০ KB-এর নিচে)');
     } catch (err: any) {
-      error(err.message || 'কভার ইমেজ আপলোড ব্যর্থ হয়েছে');
+      error(err.message || 'কভার ইমেজ আপলোড ব্যর্থ হয়েছে');
     } finally {
       setCoverUploading(false);
     }
@@ -396,12 +364,12 @@ export const AdminJobFormPage: React.FC = () => {
           const data = await res.json();
           if (res.ok && data.success && data.url) {
             setCircularLink(data.url);
-            success('সার্কুলার ফাইল সফলভাবে Cloudflare R2-তে আপলোড হয়েছে!');
+            success('সার্কুলার ফাইল সফলভাবে Cloudflare R2-তে আপলোড হয়েছে!');
           } else {
-            error(data.error || 'ফাইল আপলোড ব্যর্থ হয়েছে');
+            error(data.error || 'ফাইল আপলোড ব্যর্থ হয়েছে');
           }
         } catch (err: any) {
-          error(err?.message || 'আপলোড করতে সমস্যা হয়েছে');
+          error(err?.message || 'আপলোড করতে সমস্যা হয়েছে');
         } finally {
           setPdfUploading(false);
           if (e.target) e.target.value = '';
@@ -438,7 +406,7 @@ export const AdminJobFormPage: React.FC = () => {
         } else {
           // Compress into ultra-crisp lightweight WebP (<180KB)
           const comp = await compressImageToDataUrl(file, 1400, 1900, 180 * 1024, smartMime);
-          
+
           // Fast direct upload to Cloudflare R2
           try {
             const upRes = await fetch('/api/upload', {
@@ -464,9 +432,9 @@ export const AdminJobFormPage: React.FC = () => {
       }
 
       setCircularImages((prev) => [...prev, ...newImageUrls]);
-      success(`✨ এক সাথে ${files.length}টি ছবি ক্লাউডে সফলভাবে যুক্ত হয়েছে!`);
+      success(`✨ এক সাথে ${files.length}টি ছবি ক্লাউডে সফলভাবে যুক্ত হয়েছে!`);
     } catch (err: any) {
-      error(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
+      error(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
     } finally {
       setUploadingMultiImages(false);
       setMultiUploadProgress('');
@@ -489,18 +457,18 @@ export const AdminJobFormPage: React.FC = () => {
       .join('\n');
 
     setContent((prev) => (prev ? `${prev.trim()}\n\n${htmlSnippets}` : htmlSnippets));
-    success(`সবগুলো (${circularImages.length}টি) ছবি মূল বিবরণীতে সাজিয়ে বসিয়ে দেওয়া হয়েছে!`);
+    success(`সবগুলো (${circularImages.length}টি) ছবি মূল বিবরণীতে সাজিয়ে বসিয়ে দেওয়া হয়েছে!`);
   };
 
   const handleSetImageAsCover = (imgUrl: string) => {
     setCoverPreview(imgUrl);
     setHasCover(true);
-    success('এই ছবিটি কভার ইমেজ হিসেবে সেট করা হয়েছে!');
+    success('এই ছবিটি কভার ইমেজ হিসেবে সেট করা হয়েছে!');
   };
 
   const handleRemoveCircularImage = (idxToRemove: number) => {
     setCircularImages((prev) => prev.filter((_, idx) => idx !== idxToRemove));
-    success('ছবি সরানো হয়েছে');
+    success('ছবি সরানো হয়েছে');
   };
 
   const handleAddTag = (newTag: string) => {
@@ -524,7 +492,7 @@ export const AdminJobFormPage: React.FC = () => {
       : '';
     const gen = `${title.trim()} নিয়োগ বিজ্ঞপ্তি প্রকাশ। ${countText}পদের বিবরণ, যোগ্যতা ও শর্তাবলী জেনে টেলিটকে সহজে আবেদন করুন। ${deadlineText} bdjobapply.site`.trim();
     setMetaDescription(gen.slice(0, 160));
-    success('স্বয়ংক্রিয় মেটা ডেসক্রিপশন তৈরি করা হয়েছে!');
+    success('স্বয়ংক্রিয় মেটা ডেসক্রিপশন তৈরি করা হয়েছে!');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -563,15 +531,17 @@ export const AdminJobFormPage: React.FC = () => {
 
       const deadlineDate = deadline ? new Date(deadline) : null;
       const pubDate = status === 'scheduled' && publishedAt ? new Date(publishedAt) : new Date();
+      const nowIso = new Date().toISOString();
 
-      const jobData: any = {
+      const jobData: Record<string, any> = {
+        id: jobId,
         title: effectiveTitle,
         slug: effectiveSlug,
         category: category || 'govt',
         status: status || 'published',
         content: content || '',
-        deadline: deadlineDate,
-        publishedAt: pubDate,
+        deadline: deadlineDate ? deadlineDate.toISOString() : null,
+        publishedAt: pubDate.toISOString(),
         applyLink: (applyLink || '').trim(),
         applyServiceEnabled: Boolean(applyServiceEnabled),
         applicationFee: Number(applicationFee) || 0,
@@ -587,62 +557,24 @@ export const AdminJobFormPage: React.FC = () => {
         tags: tags.map((t) => t.trim()).filter(Boolean),
         photoSpec: { width: 300, height: 300, maxKB: 100 },
         signatureSpec: { width: 300, height: 80, maxKB: 60 },
-        updatedAt: serverTimestamp(),
+        createdAt: nowIso, // সম্পাদনায় saveJobToWorker পুরনো createdAt বজায় রাখে
+        updatedAt: nowIso,
       };
 
-      if (!isEdit) {
-        jobData.createdAt = serverTimestamp();
-      }
+      // Worker-এ সেভ (R2 jobs.json ও feed.json আপডেট হবে)
+      await saveJobToWorker(jobData);
 
-      // 1. Save directly to Server API (Persists to disk and Cloudflare R2 with 0 Firestore quota dependency)
-      try {
-        const saveRes = await fetch('/api/admin/jobs/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...jobData,
-            id: jobId,
-            deadline: deadlineDate ? deadlineDate.toISOString() : null,
-            publishedAt: pubDate ? pubDate.toISOString() : null,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }),
-        });
-        if (!saveRes.ok) {
-          const errData = await saveRes.json().catch(() => ({}));
-          console.warn('Server direct save notice:', errData);
-        }
-      } catch (srvErr) {
-        console.warn('Server direct save failed, falling back to Firestore SDK:', srvErr);
-      }
+      success(isEdit ? 'সার্কুলার আপডেট সম্পন্ন হয়েছে (R2 ক্লাউডে সংরক্ষিত)' : 'নতুন সার্কুলার প্রকাশ করা হয়েছে (R2 ক্লাউডে সংরক্ষিত)');
 
-      // 2. Try Firestore SDK in background / non-blocking so quota exhaustion never blocks admin
-      try {
-        setDoc(doc(db, 'jobs', jobId), jobData, { merge: true }).catch((fbErr) => {
-          console.warn('Direct Firestore save note (quota limit or connection):', fbErr?.message || fbErr);
-        });
-      } catch {}
-
-      success(isEdit ? 'সার্কুলার আপডেট সম্পন্ন হয়েছে (R2 ক্লাউডে সংরক্ষিত)' : 'নতুন সার্কুলার প্রকাশ করা হয়েছে (R2 ক্লাউডে সংরক্ষিত)');
-
-      // Sync feed and invalidate cache asynchronously in the background (NON-BLOCKING)
-      syncJobToFeed(jobId, jobData, 'upsert').catch((feedErr) => {
-        console.warn('Feed sync background notice:', feedErr);
-      });
       invalidateCache('jobs_');
       invalidateCache('jobs_page');
       invalidateCache('feed_');
       invalidateCache('admin_jobs');
-      fetch('/api/feed/purge-cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: jobData.slug, id: jobId, job: jobData }),
-      }).catch(() => {});
 
       navigate('/admin/jobs');
     } catch (err: any) {
       console.error('Job save error:', err);
-      error(err?.message || 'সার্কুলার সেভ করতে ব্যর্থ হয়েছে');
+      error(err?.message || 'সার্কুলার সেভ করতে ব্যর্থ হয়েছে');
     } finally {
       setSaving(false);
     }
@@ -687,7 +619,7 @@ export const AdminJobFormPage: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-emerald-200/80 mt-0.5">
-                অন্য যেকোনো সাইটের লিংক দিন অথবা টেক্সট পেস্ট করুন—Gemini AI নিখুঁতভাবে টাইটেল, স্লাগ, মেটা ট্যাগ, পদসংখ্যা ও টেবিল সহ সকল ফিল্ড স্বয়ংক্রিয়ভাবে পূরণ করবে!
+                অন্য যেকোনো সাইটের লিংক দিন অথবা টেক্সট পেস্ট করুন—Gemini AI নিখুঁতভাবে টাইটেল, স্লাগ, মেটা ট্যাগ, পদসংখ্যা ও টেবিল সহ সকল ফিল্ড স্বয়ংক্রিয়ভাবে পূরণ করবে!
               </p>
             </div>
           </div>
@@ -711,7 +643,7 @@ export const AdminJobFormPage: React.FC = () => {
                 <div className="flex-1 space-y-1">
                   <span className="font-semibold block text-white">{aiError}</span>
                   <p className="text-[11px] text-rose-300">
-                    💡 <strong>সহজ সমাধান:</strong> সাইটটি হয়তো সরাসরি লিঙ্ক রিড করা ব্লক করেছে (Cloudflare/Anti-bot)। আপনি শুধু সেই পেজের টেক্সটগুলো কপি করে <strong>&quot;📝 টেক্সট পেস্ট করুন&quot;</strong> ট্যাবে পেস্ট করুন, AI মুহূর্তেই বাকি সব পূরণ করবে!
+                    💡 <strong>সহজ সমাধান:</strong> সাইটটি হয়তো সরাসরি লিঙ্ক রিড করা ব্লক করেছে (Cloudflare/Anti-bot)। আপনি শুধু সেই পেজের টেক্সটগুলো কপি করে <strong>&quot;📝 টেক্সট পেস্ট করুন&quot;</strong> ট্যাবে পেস্ট করুন, AI মুহূর্তেই বাকি সব পূরণ করবে!
                   </p>
                 </div>
               </div>
@@ -729,7 +661,7 @@ export const AdminJobFormPage: React.FC = () => {
                 }`}
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>🌐 ওয়েবসাইটের লিঙ্ক দিন</span>
+                <span>🌐 ওয়েবসাইটের লিঙ্ক দিন</span>
               </button>
               <button
                 type="button"
@@ -765,7 +697,7 @@ export const AdminJobFormPage: React.FC = () => {
             ) : (
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-emerald-200">
-                  সার্কুলারের কাঁচা টেক্সট বা খসড়া বিবরণ:
+                  সার্কুলারের কাঁচা টেক্সট বা খসড়া বিবরণ:
                 </label>
                 <textarea
                   value={aiSourceText}
@@ -780,7 +712,7 @@ export const AdminJobFormPage: React.FC = () => {
             {/* Submit action */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
               <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                💡 <span className="font-semibold text-emerald-200">আউটর‍্যাঙ্ক গ্যারান্টি:</span> মূল তথ্যাদি হুবহু বজায় রেখে গুগলের চোখে ইউনিক ও প্রিমিয়াম করার জন্য স্বয়ংক্রিয়ভাবে টেবিল, হেডিং এবং হাই-সিপিআর মেটা ট্যাগ তৈরি হবে।
+                💡 <span className="font-semibold text-emerald-200">আউটর‍্যাঙ্ক গ্যারান্টি:</span> মূল তথ্যাদি হুবহু বজায় রেখে গুগলের চোখে ইউনিক ও প্রিমিয়াম করার জন্য স্বয়ংক্রিয়ভাবে টেবিল, হেডিং এবং হাই-সিপিআর মেটা ট্যাগ তৈরি হবে।
               </p>
 
               <button
@@ -836,19 +768,19 @@ export const AdminJobFormPage: React.FC = () => {
             onChange={(e) => setStatus(e.target.value as JobStatus)}
             options={[
               { value: 'published', label: 'Published (সরাসরি প্রকাশ)' },
-              { value: 'draft', label: 'Draft (খসড়া)' },
-              { value: 'scheduled', label: 'Scheduled (নির্ধারিত সময়ে)' },
+              { value: 'draft', label: 'Draft (খসড়া)' },
+              { value: 'scheduled', label: 'Scheduled (নির্ধারিত সময়ে)' },
             ]}
           />
         </div>
 
         {status === 'scheduled' && (
-          <Input label="প্রকাশের সময়সূচী" type="datetime-local" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} requiredStar />
+          <Input label="প্রকাশের সময়সূচী" type="datetime-local" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} requiredStar />
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input label="আবেদনের শেষ তারিখ ও সময়" type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} requiredStar />
-          <Input label="অফিসিয়াল Teletalk আবেদন লিংক" placeholder="http://br.teletalk.com.bd" value={applyLink} onChange={(e) => setApplyLink(e.target.value)} />
+          <Input label="আবেদনের শেষ তারিখ ও সময়" type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} requiredStar />
+          <Input label="অফিসিয়াল Teletalk আবেদন লিংক" placeholder="http://br.teletalk.com.bd" value={applyLink} onChange={(e) => setApplyLink(e.target.value)} />
         </div>
       </div>
 
@@ -875,7 +807,7 @@ export const AdminJobFormPage: React.FC = () => {
                   placeholder="১০"
                 />
                 <p className="text-[11px] text-emerald-800 mt-1">
-                  💡 প্রতিটি ভিন্ন ভিন্ন পদের সরকারি ফি&apos;র সাথে এই <strong>{serviceCharge || 10} টাকা</strong> যোগ হয়ে মোট ফি নির্ধারিত হবে।
+                  💡 প্রতিটি ভিন্ন ভিন্ন পদের সরকারি ফি&apos;র সাথে এই <strong>{serviceCharge || 10} টাকা</strong> যোগ হয়ে মোট ফি নির্ধারিত হবে।
                 </p>
               </div>
               <div>
@@ -887,7 +819,7 @@ export const AdminJobFormPage: React.FC = () => {
                   placeholder="যেমন: ৫০ বা ১০০ বা ২২৩"
                 />
                 <p className="text-[11px] text-gray-500 mt-1">
-                  নিচের &ldquo;পদের তালিকা&rdquo; সেকশনে প্রতিটি পদের নির্দিষ্ট সরকারি ফি দিলে স্বয়ংক্রিয়ভাবে সেটাই কার্যকর হবে।
+                  নিচের &ldquo;পদের তালিকা&rdquo; সেকশনে প্রতিটি পদের নির্দিষ্ট সরকারি ফি দিলে স্বয়ংক্রিয়ভাবে সেটাই কার্যকর হবে।
                 </p>
               </div>
             </div>
@@ -913,7 +845,7 @@ export const AdminJobFormPage: React.FC = () => {
       {/* Cover Image & Circular Link Section */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
         <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2">
-          কভার ইমেজ ও সার্কুলার লিংক (০ খরচে ফায়ারস্টোর স্টোরেজ)
+          কভার ইমেজ ও সার্কুলার লিংক
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -947,7 +879,7 @@ export const AdminJobFormPage: React.FC = () => {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-gray-700">
-                সার্কুলার ফাইল লিংক (Cloudflare R2, Google Drive বা অফিসিয়াল লিংক)
+                সার্কুলার ফাইল লিংক (Cloudflare R2, Google Drive বা অফিসিয়াল লিংক)
               </label>
               <div className="flex items-center gap-2">
                 <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold cursor-pointer hover:bg-blue-100 border border-blue-200 transition-colors">
@@ -970,10 +902,10 @@ export const AdminJobFormPage: React.FC = () => {
             </div>
             <Input
               label=""
-              placeholder="https://pub-...r2.dev/... অথবা https://drive.google.com/... অথবা অফিসিয়াল লিংক"
+              placeholder="https://pub-...r2.dev/... অথবা https://drive.google.com/... অথবা অফিসিয়াল লিংক"
               value={circularLink}
               onChange={(e) => setCircularLink(e.target.value)}
-              helperText="সার্কুলার PDF সরাসরি Cloudflare R2 ক্লাউডে আপলোড করতে পারেন অথবা ড্রাইভ/অফিসিয়াল লিংক পেস্ট করতে পারেন"
+              helperText="সার্কুলার PDF সরাসরি Cloudflare R2 ক্লাউডে আপলোড করতে পারেন অথবা ড্রাইভ/অফিসিয়াল লিংক পেস্ট করতে পারেন"
             />
           </div>
         </div>
@@ -1040,7 +972,7 @@ export const AdminJobFormPage: React.FC = () => {
                   type="button"
                   onClick={handleInsertAllImagesToContent}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5"
-                  title="সবগুলো ছবি সিরিয়ালে মূল বিবরণী বক্সে যুক্ত করুন"
+                  title="সবগুলো ছবি সিরিয়ালে মূল বিবরণী বক্সে যুক্ত করুন"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>মূল বিবরণীতে (Content) বসান</span>
@@ -1094,7 +1026,7 @@ export const AdminJobFormPage: React.FC = () => {
                       rel="noopener noreferrer"
                       className="text-gray-500 hover:text-gray-800"
                     >
-                      বড় করুন ↗
+                      বড় করুন ↗
                     </a>
                   </div>
                 </div>
@@ -1116,7 +1048,7 @@ export const AdminJobFormPage: React.FC = () => {
                 সার্চ ইঞ্জিন অপ্টিমাইজেশন (SEO & Google Rank Optimization)
               </h3>
               <p className="text-xs text-gray-500">
-                গুগল সার্চ ও সোশ্যাল মিডিয়ায় পোস্ট ১ নম্বরে র‍্যাংক করানোর জন্য মেটা ট্যাগ, কিওয়ার্ড ও ডেসক্রিপশন সেট করুন
+                গুগল সার্চ ও সোশ্যাল মিডিয়ায় পোস্ট ১ নম্বরে র‍্যাংক করানোর জন্য মেটা ট্যাগ, কিওয়ার্ড ও ডেসক্রিপশন সেট করুন
               </p>
             </div>
           </div>
@@ -1127,10 +1059,10 @@ export const AdminJobFormPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <label className="block text-xs font-bold text-gray-800">
-                মূল ফোকাস কিওয়ার্ড (Focus Keyword)
+                মূল ফোকাস কিওয়ার্ড (Focus Keyword)
               </label>
               <span className="text-[11px] text-gray-500">
-                যে কথাটি দিয়ে মানুষ গুগলে খুঁজবে (যেমন: &ldquo;বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি&rdquo; বা &ldquo;পল্লী বিদ্যুৎ সার্কুলার&rdquo;)
+                যে কথাটি দিয়ে মানুষ গুগলে খুঁজবে (যেমন: &ldquo;বাংলাদেশ রেলওয়ে নিয়োগ বিজ্ঞপ্তি&rdquo; বা &ldquo;পল্লী বিদ্যুৎ সার্কুলার&rdquo;)
               </span>
             </div>
           </div>
@@ -1204,10 +1136,10 @@ export const AdminJobFormPage: React.FC = () => {
               </span>
             </div>
             <Input
-              placeholder={title || 'গুগলে প্রদর্শিত আকর্ষণীয় শিরোনাম লিখুন...'}
+              placeholder={title || 'গুগলে প্রদর্শিত আকর্ষণীয় শিরোনাম লিখুন...'}
               value={seoTitle}
               onChange={(e) => setSeoTitle(e.target.value)}
-              helperText="খালি রাখলে স্বয়ংক্রিয়ভাবে মূল শিরোনাম ব্যবহৃত হবে।"
+              helperText="খালি রাখলে স্বয়ংক্রিয়ভাবে মূল শিরোনাম ব্যবহৃত হবে।"
             />
           </div>
 
@@ -1218,7 +1150,7 @@ export const AdminJobFormPage: React.FC = () => {
                   মেটা ডেসক্রিপশন (Meta Description)
                 </label>
                 <span className="text-[11px] text-gray-500">
-                  গুগল সার্চ ফলাফলে শিরোনামের নিচে এই ১-২ লাইনের বিবরণটি প্রদর্শিত হয়
+                  গুগল সার্চ ফলাফলে শিরোনামের নিচে এই ১-২ লাইনের বিবরণটি প্রদর্শিত হয়
                 </span>
               </div>
 
@@ -1227,7 +1159,7 @@ export const AdminJobFormPage: React.FC = () => {
                   type="button"
                   onClick={handleGenerateMetaDescription}
                   className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                  title="টাইটেল ও সার্কুলারের ডাটা দিয়ে স্বয়ংক্রিয়ভাবে মেটা ডেসক্রিপশন তৈরি করুন"
+                  title="টাইটেল ও সার্কুলারের ডাটা দিয়ে স্বয়ংক্রিয়ভাবে মেটা ডেসক্রিপশন তৈরি করুন"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
                   <span>✨ অটো তৈরি করুন</span>
@@ -1273,7 +1205,7 @@ export const AdminJobFormPage: React.FC = () => {
         {/* 3. Tags / Keywords */}
         <div className="space-y-2.5">
           <label className="block text-xs font-bold text-gray-800">
-            ট্যাগ ও কীওয়ার্ডসমূহ (Tags / Keywords)
+            ট্যাগ ও কীওয়ার্ডসমূহ (Tags / Keywords)
           </label>
           <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-gray-50 rounded-xl border border-gray-200 min-h-[44px]">
             {tags.map((tag, idx) => (
@@ -1313,7 +1245,7 @@ export const AdminJobFormPage: React.FC = () => {
 
           {/* Quick Suggestions */}
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <span className="text-[11px] text-gray-500 font-medium">জনপ্রিয় সাজেশন:</span>
+            <span className="text-[11px] text-gray-500 font-medium">জনপ্রিয় সাজেশন:</span>
             {[
               'সরকারি চাকরি',
               'টেলিটক সার্কুলার',
@@ -1362,7 +1294,7 @@ export const AdminJobFormPage: React.FC = () => {
 
             <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">
               {metaDescription ||
-                'চাকরির নিয়োগ বিজ্ঞপ্তি প্রকাশ হয়েছে। পদের বিবরণ, শিক্ষাগত যোগ্যতা ও শর্তাবলী জেনে সহজে অনলাইনে আবেদন করুন।'}
+                'চাকরির নিয়োগ বিজ্ঞপ্তি প্রকাশ হয়েছে। পদের বিবরণ, শিক্ষাগত যোগ্যতা ও শর্তাবলী জেনে সহজে অনলাইনে আবেদন করুন।'}
             </p>
           </div>
         </div>
