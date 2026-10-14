@@ -15,11 +15,12 @@ export const JobsPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     const page1 = getCached<JobCircular[]>('jobs_page_1');
     if (page1 && page1.length > 0) {
-      return page1.filter((j) => !isDummyJob(j));
+      const clean = page1.filter((j) => !isDummyJob(j));
+      if (clean.length > 0) return clean;
     }
-    return [];
+    return DEFAULT_JOBS.filter((j) => !isDummyJob(j));
   });
-  const [loading, setLoading] = useState(() => jobs.length === 0);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState(() => {
     return new URLSearchParams(window.location.search).get('search') || '';
   });
@@ -29,7 +30,6 @@ export const JobsPage: React.FC = () => {
 
 
   const fetchPage = async (page: number, bypassCache = false) => {
-    setLoading(true);
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
     if (!bypassCache) {
       const cached = getCached<JobCircular[]>(cacheKey);
@@ -64,10 +64,39 @@ export const JobsPage: React.FC = () => {
         }
       }
     } catch {
-      // Try Cloudflare R2 public CDN fallback directly
+      // Try next fallback
     }
 
-    // Step 1.5: Try Cloudflare R2 public CDN fallback directly
+    // Step 1.2: Same-origin static /jobs.json fallback (zero CORS, 100% reliable for Cloudflare Pages / Vercel static hosting)
+    try {
+      const staticRes = await fetch('/jobs.json');
+      if (staticRes.ok) {
+        let staticJobs = await staticRes.json();
+        if (Array.isArray(staticJobs) && staticJobs.length > 0) {
+          let clean = staticJobs.filter((j: any) => !isDummyJob(j));
+          if (categoryFilter && categoryFilter !== 'all') {
+            clean = clean.filter((j: any) =>
+              categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
+            );
+          }
+          if (searchTerm) {
+            clean = clean.filter((j: any) =>
+              String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
+            );
+          }
+          if (clean.length > 0) {
+            setJobs(clean);
+            setHasMore(false);
+            setCached(cacheKey, clean);
+            clean.forEach(precacheJob);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    // Step 1.5: Cloudflare R2 public CDN fallback
     try {
       const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
       if (r2Res.ok) {
@@ -84,22 +113,31 @@ export const JobsPage: React.FC = () => {
               String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
             );
           }
-          setJobs(cleanR2);
-          setHasMore(false);
-          setCached(cacheKey, cleanR2);
-          setLoading(false);
-          return;
+          if (cleanR2.length > 0) {
+            setJobs(cleanR2);
+            setHasMore(false);
+            setCached(cacheKey, cleanR2);
+            cleanR2.forEach(precacheJob);
+            setLoading(false);
+            return;
+          }
         }
       }
-    } catch {
-      // Handled silently
-    }
+    } catch {}
 
-    // Step 2: In-memory fallback if any page cached
-    const page1 = getCached<JobCircular[]>('jobs_page_1');
-    if (page1 && page1.length > 0) {
-      setJobs(page1.filter((j) => !isDummyJob(j)));
+    // Step 2: Rock-solid bundled DEFAULT_JOBS fallback (NEVER EMPTY)
+    let defClean = DEFAULT_JOBS.filter((j) => !isDummyJob(j));
+    if (categoryFilter && categoryFilter !== 'all') {
+      defClean = defClean.filter((j: any) =>
+        categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
+      );
     }
+    if (searchTerm) {
+      defClean = defClean.filter((j: any) =>
+        String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    setJobs(defClean);
     setLoading(false);
   };
 

@@ -47,19 +47,33 @@ export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummar
     // Non-fatal, try Cloudflare R2 public CDN below
   }
 
-  // 1.5. Cloudflare R2 Public CDN Edge Fallback (Global CDN, 0 Firestore reads, 100% uptime)
-  try {
-    const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/feed.json');
-    if (r2Res.ok) {
-      const r2Data = await r2Res.json();
-      if (Array.isArray(r2Data?.posts) && r2Data.posts.length > 0) {
-        setCached(CACHE_KEY, r2Data.posts);
-        return r2Data.posts;
+    // 1.5. Cloudflare R2 Public CDN Edge Fallback (Global CDN, 0 Firestore reads, 100% uptime)
+    try {
+      const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/feed.json');
+      if (r2Res.ok) {
+        const r2Data = await r2Res.json();
+        if (Array.isArray(r2Data?.posts) && r2Data.posts.length > 0) {
+          setCached(CACHE_KEY, r2Data.posts);
+          return r2Data.posts;
+        }
       }
+    } catch (r2Err) {
+      // Non-fatal
     }
-  } catch (r2Err) {
-    // Fallback to client-side SDK below
-  }
+
+    // 1.6. Same-origin static file fallback (/feed.json from public directory)
+    try {
+      const staticRes = await fetch('/feed.json');
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (Array.isArray(staticData?.posts) && staticData.posts.length > 0) {
+          setCached(CACHE_KEY, staticData.posts);
+          return staticData.posts;
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
 
   // 2. Client-Side Firestore SDK Fallback (If server API route unavailable)
   try {

@@ -150,6 +150,23 @@ function saveStoredJobs(jobs: any[]) {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
+
+    // Also mirror to public folder for 100% static hosting resilience (Cloudflare Pages / Vercel)
+    const pubDir = path.join(process.cwd(), 'public');
+    if (fs.existsSync(pubDir)) {
+      fs.writeFileSync(path.join(pubDir, 'jobs.json'), JSON.stringify(jobs, null, 2), 'utf8');
+      const feedList = jobs.slice(0, 50).map((j) => ({
+        id: j.id,
+        title: j.title || '',
+        slug: j.slug || j.id,
+        category: j.category || 'govt',
+        deadline: j.deadline,
+        publishedAt: j.publishedAt,
+        applyServiceEnabled: Boolean(j.applyServiceEnabled),
+        featuredImage: j.featuredImage || (j.circularImages?.[0] || null),
+      }));
+      fs.writeFileSync(path.join(pubDir, 'feed.json'), JSON.stringify({ posts: feedList, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+    }
   } catch (err) {
     console.warn('Failed to save jobs to disk:', err);
   }

@@ -14,15 +14,16 @@ export const HomePage: React.FC = () => {
   const [jobs, setJobs] = useState<FeedJobSummary[]>(() => {
     const cached = getCached<FeedJobSummary[]>('feed_latest');
     if (cached && cached.length > 0) {
-      return cached.filter((j) => !isDummyJob(j));
+      const clean = cached.filter((j) => !isDummyJob(j));
+      if (clean.length > 0) return clean;
     }
-    return [];
+    return DEFAULT_FEED_JOBS.filter((j) => !isDummyJob(j));
   });
   const [examNotices, setExamNotices] = useState<ExamNotice[]>(() => {
     return getCached<ExamNotice[]>('exams_home') || [];
   });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [loading, setLoading] = useState(() => jobs.length === 0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;

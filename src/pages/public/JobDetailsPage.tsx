@@ -130,6 +130,54 @@ export const JobDetailsPage: React.FC = () => {
         } catch {
           // Handled silently
         }
+
+        // Step C: Same-origin static /jobs.json fallback (Zero CORS, 100% reliable for static hosting)
+        try {
+          const staticRes = await fetch('/jobs.json');
+          if (staticRes.ok) {
+            const staticJobs = await staticRes.json();
+            if (Array.isArray(staticJobs)) {
+              const decodedSlug = decodeURIComponent(slug);
+              const resolvedJob = staticJobs.find(
+                (j: any) =>
+                  j.slug === slug ||
+                  j.id === slug ||
+                  (j.slug && decodeURIComponent(j.slug) === decodedSlug)
+              );
+              if (resolvedJob) {
+                if (isCancelled) return;
+                setCached(cacheKey, resolvedJob);
+                precacheJob(resolvedJob);
+                setJob(resolvedJob);
+                if (resolvedJob.featuredImage) {
+                  setCoverDataUrl(resolvedJob.featuredImage);
+                }
+                setLoading(false);
+                return;
+              }
+            }
+          }
+        } catch {}
+
+        // Step D: In-bundle DEFAULT_JOBS fallback (100% offline-proof)
+        const decodedSlug = decodeURIComponent(slug);
+        const bundledJob = DEFAULT_JOBS.find(
+          (j: any) =>
+            j.slug === slug ||
+            j.id === slug ||
+            (j.slug && decodeURIComponent(j.slug) === decodedSlug)
+        );
+        if (bundledJob) {
+          if (isCancelled) return;
+          setCached(cacheKey, bundledJob);
+          precacheJob(bundledJob);
+          setJob(bundledJob);
+          if (bundledJob.featuredImage) {
+            setCoverDataUrl(bundledJob.featuredImage);
+          }
+          setLoading(false);
+          return;
+        }
       } catch (err) {
         // Silently handled
       } finally {

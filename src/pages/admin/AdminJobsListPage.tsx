@@ -9,14 +9,17 @@ import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
 import { recoverLocalJobs, isDummyJob } from '../../utils/recoverLocalJobs';
+import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import { Plus, Edit, Trash2, ExternalLink, Calendar, Send, CloudUpload, RefreshCw } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     const cached = getCached<JobCircular[]>('admin_jobs') || [];
-    return cached.filter((j) => !isDummyJob(j));
+    const clean = cached.filter((j) => !isDummyJob(j));
+    if (clean.length > 0) return clean;
+    return DEFAULT_JOBS.filter((j) => !isDummyJob(j));
   });
-  const [loading, setLoading] = useState(() => !getCached<JobCircular[]>('admin_jobs'));
+  const [loading, setLoading] = useState(false);
   const [syncingR2, setSyncingR2] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { success, error } = useToast();
@@ -54,6 +57,24 @@ export const AdminJobsListPage: React.FC = () => {
             clean.forEach(precacheJob);
             setLoading(false);
             return;
+          }
+        }
+      } catch {}
+
+      // 1.2. Try same-origin static /jobs.json (zero CORS, 100% reliable)
+      try {
+        const staticRes = await fetch('/jobs.json');
+        if (staticRes.ok) {
+          const staticData = await staticRes.json();
+          if (Array.isArray(staticData) && staticData.length > 0) {
+            const clean = staticData.filter((j: any) => !isDummyJob(j));
+            if (clean.length > 0) {
+              setJobs(clean);
+              setCached('admin_jobs', clean);
+              clean.forEach(precacheJob);
+              setLoading(false);
+              return;
+            }
           }
         }
       } catch {}
