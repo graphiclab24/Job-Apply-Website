@@ -29,6 +29,7 @@ import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../../context/AuthContext';
 import { formatJobContent } from '../../utils/formatJobContent';
+import { fetchJobsList } from '../../services/jobsStore';
 
 export const JobDetailsPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -82,104 +83,26 @@ export const JobDetailsPage: React.FC = () => {
 
     const fetchJob = async () => {
       try {
-        // Step A: Ultra-fast Server-Side Edge API (Zero client Firestore reads, ~15ms response)
-        try {
-          const apiRes = await fetch(`/api/jobs/${encodeURIComponent(slug)}`);
-          if (apiRes.ok) {
-            const apiJob = await apiRes.json();
-            if (apiJob && apiJob.title) {
-              if (isCancelled) return;
-              setCached(cacheKey, apiJob);
-              precacheJob(apiJob);
-              setJob(apiJob);
-              if (apiJob.featuredImage) setCoverDataUrl(apiJob.featuredImage);
-              setLoading(false);
-              return;
-            }
-          }
-        } catch {
-          // Fallback to Cloudflare R2 CDN below
-        }
-
-        // Step B: Cloudflare R2 CDN Fallback (Zero Firestore Reads, Global Edge CDN)
-        try {
-          const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
-          if (r2Res.ok) {
-            const r2Jobs = await r2Res.json();
-            if (Array.isArray(r2Jobs)) {
-              const decodedSlug = decodeURIComponent(slug);
-              const resolvedJob = r2Jobs.find(
-                (j: any) =>
-                  j.slug === slug ||
-                  j.id === slug ||
-                  (j.slug && decodeURIComponent(j.slug) === decodedSlug)
-              );
-              if (resolvedJob) {
-                if (isCancelled) return;
-                setCached(cacheKey, resolvedJob);
-                precacheJob(resolvedJob);
-                setJob(resolvedJob);
-                if (resolvedJob.featuredImage) {
-                  setCoverDataUrl(resolvedJob.featuredImage);
-                }
-                setLoading(false);
-                return;
-              }
-            }
-          }
-        } catch {
-          // Handled silently
-        }
-
-        // Step C: Same-origin static /jobs.json fallback (Zero CORS, 100% reliable for static hosting)
-        try {
-          const staticRes = await fetch('/jobs.json');
-          if (staticRes.ok) {
-            const staticJobs = await staticRes.json();
-            if (Array.isArray(staticJobs)) {
-              const decodedSlug = decodeURIComponent(slug);
-              const resolvedJob = staticJobs.find(
-                (j: any) =>
-                  j.slug === slug ||
-                  j.id === slug ||
-                  (j.slug && decodeURIComponent(j.slug) === decodedSlug)
-              );
-              if (resolvedJob) {
-                if (isCancelled) return;
-                setCached(cacheKey, resolvedJob);
-                precacheJob(resolvedJob);
-                setJob(resolvedJob);
-                if (resolvedJob.featuredImage) {
-                  setCoverDataUrl(resolvedJob.featuredImage);
-                }
-                setLoading(false);
-                return;
-              }
-            }
-          }
-        } catch {}
-
-        // Step D: In-bundle DEFAULT_JOBS fallback (100% offline-proof)
         const decodedSlug = decodeURIComponent(slug);
-        const bundledJob = DEFAULT_JOBS.find(
-          (j: any) =>
-            j.slug === slug ||
-            j.id === slug ||
-            (j.slug && decodeURIComponent(j.slug) === decodedSlug)
-        );
-        if (bundledJob) {
-          if (isCancelled) return;
-          setCached(cacheKey, bundledJob);
-          precacheJob(bundledJob);
-          setJob(bundledJob);
-          if (bundledJob.featuredImage) {
-            setCoverDataUrl(bundledJob.featuredImage);
+        const matches = (j: any) =>
+          j.slug === slug ||
+          j.id === slug ||
+          (j.slug && decodeURIComponent(j.slug) === decodedSlug);
+
+        // R2 jobs.json → same-origin /jobs.json (কোনো /api বা Firestore নেই)
+        const list = await fetchJobsList();
+        const resolved: any = list.find(matches) || DEFAULT_JOBS.find(matches);
+
+        if (resolved && !isCancelled) {
+          setCached(cacheKey, resolved);
+          precacheJob(resolved);
+          setJob(resolved);
+          if (resolved.featuredImage) {
+            setCoverDataUrl(resolved.featuredImage);
           }
-          setLoading(false);
-          return;
         }
-      } catch (err) {
-        // Silently handled
+      } catch {
+        // নীরবে handle
       } finally {
         if (!isCancelled) {
           setLoading(false);
@@ -236,8 +159,8 @@ export const JobDetailsPage: React.FC = () => {
   if (!job) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-lg font-bold text-gray-800 mb-2">বিজ্ঞপ্তিটি পাওয়া যায়নি</h2>
-        <p className="text-xs text-gray-500 mb-5">হয়তো লিংকটি ভুল অথবা বিজ্ঞপ্তিটি সরানো হয়েছে।</p>
+        <h2 className="text-lg font-bold text-gray-800 mb-2">বিজ্ঞপ্তিটি পাওয়া যায়নি</h2>
+        <p className="text-xs text-gray-500 mb-5">হয়তো লিংকটি ভুল অথবা বিজ্ঞপ্তিটি সরানো হয়েছে।</p>
         <Link to="/jobs">
           <Button variant="outline">সকল চাকরি দেখুন</Button>
         </Link>
@@ -280,7 +203,7 @@ export const JobDetailsPage: React.FC = () => {
     job.metaDescription ||
     `${job.title}। সরকারি ও টেলিটক অনলাইন আবেদন সেবা। আবেদনের শেষ তারিখ: ${
       deadlineDate ? deadlineDate.toLocaleDateString('bn-BD') : 'বিজ্ঞপ্তি দেখুন'
-    }। পদে পদের যোগ্যতা ও নিয়মাবলি জানুন। bdjobapply.site`;
+    }। পদে পদের যোগ্যতা ও নিয়মাবলি জানুন। bdjobapply.site`;
 
   const keywordsString =
     job.tags && job.tags.length > 0
@@ -522,7 +445,7 @@ export const JobDetailsPage: React.FC = () => {
                     নিয়োগ বিজ্ঞপ্তির মূল পাতাসমূহ ({circularImagesList.length}টি পাতা)
                   </h3>
                   <p className="text-[11px] text-gray-500">
-                    পত্রিকা/অফিসিয়াল সার্কুলারটি পরিষ্কার পড়তে জুম বাটনে চাপ দিন
+                    পত্রিকা/অফিসিয়াল সার্কুলারটি পরিষ্কার পড়তে জুম বাটনে চাপ দিন
                   </p>
                 </div>
               </div>
@@ -538,7 +461,7 @@ export const JobDetailsPage: React.FC = () => {
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                     }`}
                   >
-                    পাতাওয়ারি দেখুন
+                    পাতাওয়ারি দেখুন
                   </button>
                   <button
                     type="button"
@@ -598,10 +521,10 @@ export const JobDetailsPage: React.FC = () => {
                         setLightboxZoom(1);
                       }}
                       className="px-3 py-1.5 bg-black/75 hover:bg-black text-white rounded-lg text-xs font-semibold backdrop-blur-xs flex items-center gap-1.5 shadow-md"
-                      title="ফুল স্ক্রিনে বড় করে জুম করে দেখুন"
+                      title="ফুল স্ক্রিনে বড় করে জুম করে দেখুন"
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
-                      <span>বড় করে দেখুন</span>
+                      <span>বড় করে দেখুন</span>
                     </button>
                     <a
                       href={circularImagesList[selectedImageIndex] || circularImagesList[0]}
@@ -677,7 +600,7 @@ export const JobDetailsPage: React.FC = () => {
           <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-gray-600 flex items-center gap-1">
               <Tag className="w-3.5 h-3.5 text-emerald-600" />
-              <span>সম্পর্কিত কীওয়ার্ড:</span>
+              <span>সম্পর্কিত কীওয়ার্ড:</span>
             </span>
             {job.tags.map((t, idx) => (
               <Link
@@ -695,8 +618,8 @@ export const JobDetailsPage: React.FC = () => {
         {circularLink && (
           <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="text-xs text-emerald-900">
-              <span className="font-bold block">অফিসিয়াল সার্কুলার ফাইল / নোটিশ লিংক</span>
-              <span>মূল সার্কুলারটি পড়তে বা দেখতে পাশের লিংকে ক্লিক করুন।</span>
+              <span className="font-bold block">অফিসিয়াল সার্কুলার ফাইল / নোটিশ লিংক</span>
+              <span>মূল সার্কুলারটি পড়তে বা দেখতে পাশের লিংকে ক্লিক করুন।</span>
             </div>
             <a
               href={circularLink}
@@ -718,7 +641,7 @@ export const JobDetailsPage: React.FC = () => {
                 ? 'আবেদনের সময়সীমা শেষ'
                 : job.applyServiceEnabled
                 ? 'আমাদের মাধ্যমে অনলাইনে আবেদন করতে চান?'
-                : 'অফিসিয়াল ওয়েবসাইটে আবেদন'}
+                : 'অফিসিয়াল ওয়েবসাইটে আবেদন'}
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
               {isExpired
@@ -727,7 +650,7 @@ export const JobDetailsPage: React.FC = () => {
                 ? job.posts && job.posts.length > 0
                   ? 'পদভেদে সরকারি ফি + সার্ভিস চার্জ (বিস্তারিত উপরের টেবিলে দেখুন)'
                   : `টেলিটক ফি: ৳${job.applicationFee || 0} + সার্ভিস চার্জ: ৳${job.serviceCharge !== undefined ? job.serviceCharge : 10} (মোট ৳${(job.applicationFee || 0) + (job.serviceCharge !== undefined ? job.serviceCharge : 10)})`
-                : 'বিজ্ঞপ্তিতে দেওয়া অফিশিয়াল লিংক ব্যবহার করে আবেদন করুন।'}
+                : 'বিজ্ঞপ্তিতে দেওয়া অফিশিয়াল লিংক ব্যবহার করে আবেদন করুন।'}
             </p>
           </div>
 
@@ -737,7 +660,7 @@ export const JobDetailsPage: React.FC = () => {
             </Button>
           ) : !isExpired && job.applyLink ? (
             <a href={job.applyLink} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline">অফিসিয়াল লিংকে যান ↗</Button>
+              <Button variant="outline">অফিসিয়াল লিংকে যান ↗</Button>
             </a>
           ) : (
             <span className="px-3 py-1.5 bg-rose-100 text-rose-800 text-xs font-bold rounded-lg">
