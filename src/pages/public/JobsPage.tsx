@@ -9,6 +9,7 @@ import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { safeFormatBnDate, isJobExpired } from '../../utils/dateUtils';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
+import { fetchJobsList } from '../../services/jobsStore';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -31,117 +32,65 @@ export const JobsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
+  const ALL_JOBS_KEY = 'jobs_all';
+
+  // সব জব একবার লোড করে ক্যাশ করা হয়; ফিল্টার ও পেজিং ব্রাউজারে হয়
+  const loadAllJobs = async (bypassCache: boolean): Promise<JobCircular[]> => {
+    if (!bypassCache) {
+      const cached = getCached<JobCircular[]>(ALL_JOBS_KEY);
+      if (cached && cached.length > 0) return cached;
+    }
+    const list = (await fetchJobsList()) as JobCircular[];
+    if (list.length > 0) {
+      setCached(ALL_JOBS_KEY, list);
+      list.forEach(precacheJob);
+    }
+    return list;
+  };
+
   const fetchPage = async (page: number, bypassCache = false) => {
     setLoading(true);
-    const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
-    if (!bypassCache) {
-      const cached = getCached<JobCircular[]>(cacheKey);
-      if (cached && cached.length > 0) {
-        const clean = cached.filter((j) => !isDummyJob(j));
-        if (clean.length > 0) {
-          setJobs(clean);
-          setLoading(false);
-          return;
-        }
-      }
-    }
-
-    // Step 1: Ultra-fast Server-Side Edge Endpoint (~2ms from RAM)
     try {
-      const apiRes = await fetch(
-        `/api/jobs?page=${page}&limit=${ITEMS_PER_PAGE}&category=${encodeURIComponent(categoryFilter)}&search=${encodeURIComponent(searchTerm)}`
-      );
-      if (apiRes.ok) {
-        const data = await apiRes.json();
-        if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
-          const cleanJobs = data.jobs.filter((j: any) => !isDummyJob(j));
-          setJobs(cleanJobs);
-          setHasMore(Boolean(data.hasMore));
-          setCached(cacheKey, cleanJobs);
-          if (page === 1 && categoryFilter === 'all' && !searchTerm) {
-            setCached('jobs_page_1', cleanJobs);
-          }
-          cleanJobs.forEach(precacheJob);
-          setLoading(false);
-          return;
-        }
-      }
-    } catch {
-      // Try next fallback
-    }
+      const all = (await loadAllJobs(bypassCache)).filter((j) => !isDummyJob(j));
 
-    // Step 1.2: Same-origin static /jobs.json fallback (zero CORS, 100% reliable for Cloudflare Pages / Vercel static hosting)
-    try {
-      const staticRes = await fetch('/jobs.json');
-      if (staticRes.ok) {
-        let staticJobs = await staticRes.json();
-        if (Array.isArray(staticJobs) && staticJobs.length > 0) {
-          let clean = staticJobs.filter((j: any) => !isDummyJob(j));
-          if (categoryFilter && categoryFilter !== 'all') {
-            clean = clean.filter((j: any) =>
-              categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
-            );
-          }
-          if (searchTerm) {
-            clean = clean.filter((j: any) =>
-              String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
-            );
-          }
-          if (clean.length > 0) {
-            setJobs(clean);
-            setHasMore(false);
-            setCached(cacheKey, clean);
-            clean.forEach(precacheJob);
-            setLoading(false);
-            return;
-          }
-        }
+      if (all.length === 0) {
+        setJobs(DEFAULT_JOBS.filter((j) => !isDummyJob(j)));
+        setHasMore(false);
+        return;
       }
-    } catch {}
 
-    // Step 1.5: Cloudflare R2 public CDN fallback
-    try {
-      const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
-      if (r2Res.ok) {
-        let r2Jobs = await r2Res.json();
-        if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
-          let cleanR2 = r2Jobs.filter((j: any) => !isDummyJob(j));
-          if (categoryFilter && categoryFilter !== 'all') {
-            cleanR2 = cleanR2.filter((j: any) =>
-              categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
-            );
-          }
-          if (searchTerm) {
-            cleanR2 = cleanR2.filter((j: any) =>
-              String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
-            );
-          }
-          if (cleanR2.length > 0) {
-            setJobs(cleanR2);
-            setHasMore(false);
-            setCached(cacheKey, cleanR2);
-            cleanR2.forEach(precacheJob);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-    } catch {}
+      const term = searchTerm.toLowerCase().trim();
+      let list = all.filter((job) => {
+        const titleMatch = Boolean(job.title && String(job.title).toLowerCase().includes(term));
+        const postsMatch = Boolean(
+          job.posts &&
+            Array.isArray(job.posts) &&
+            job.posts.some((p) => p?.name && String(p.name).toLowerCase().includes(term))
+        );
+        const tagsMatch = Boolean(
+          Array.isArray(job.tags) && job.tags.some((t) => typeof t === 'string' && t.toLowerCase().includes(term))
+        );
+        const keywordMatch = Boolean(job.focusKeyword && String(job.focusKeyword).toLowerCase().includes(term));
+        const matchesSearch = !term || titleMatch || postsMatch || tagsMatch || keywordMatch;
 
-    // Step 2: Rock-solid bundled DEFAULT_JOBS fallback (NEVER EMPTY)
-    let defClean = DEFAULT_JOBS.filter((j) => !isDummyJob(j));
-    if (categoryFilter && categoryFilter !== 'all') {
-      defClean = defClean.filter((j: any) =>
-        categoryFilter === 'ngo' ? j.category === 'ngo' || j.category === 'brac' : j.category === categoryFilter
-      );
+        const cat = job.category || 'govt';
+        const matchesCategory =
+          categoryFilter === 'all' ||
+          (categoryFilter === 'ngo' ? cat === 'ngo' || cat === 'brac' : cat === categoryFilter);
+
+        return matchesSearch && matchesCategory;
+      });
+
+      const start = (page - 1) * ITEMS_PER_PAGE;
+      setJobs(list.slice(start, start + ITEMS_PER_PAGE));
+      setHasMore(start + ITEMS_PER_PAGE < list.length);
+    } catch (err) {
+      console.warn('Jobs load failed:', err);
+      setJobs(DEFAULT_JOBS.filter((j) => !isDummyJob(j)));
+      setHasMore(false);
+    } finally {
+      setLoading(false);
     }
-    if (searchTerm) {
-      defClean = defClean.filter((j: any) =>
-        String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    setJobs(defClean);
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -210,7 +159,7 @@ export const JobsPage: React.FC = () => {
           {JSON.stringify({
             '@context': 'https://schema.org',
             '@type': 'CollectionPage',
-            name: 'সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি',
+            name: 'সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি',
             url: 'https://bdjobapply.site/jobs',
             description: 'চলমান সকল সরকারি ও বেসরকারি চাকরির নিয়োগ বিজ্ঞপ্তি ২০২৬',
           })}
@@ -219,10 +168,10 @@ export const JobsPage: React.FC = () => {
 
       <div className="border-b border-gray-200 pb-4">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-          সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি
+          সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি
         </h1>
         <p className="text-xs text-gray-500 mt-1">
-          পৃষ্ঠা {currentPage} • প্রতি পেজে ২০টি করে বিজ্ঞপ্তি (কোটা সাশ্রয়ী পেজিনেশন)
+          পৃষ্ঠা {currentPage} • প্রতি পেজে ২০টি করে বিজ্ঞপ্তি (কোটা সাশ্রয়ী পেজিনেশন)
         </p>
       </div>
 
@@ -232,7 +181,7 @@ export const JobsPage: React.FC = () => {
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="চাকরি বা পদের নাম দিয়ে খুঁজুন..."
+            placeholder="চাকরি বা পদের নাম দিয়ে খুঁজুন..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -273,8 +222,8 @@ export const JobsPage: React.FC = () => {
               categoryFilter !== 'all'
                 ? `নির্বাচিত ক্যাটাগরিতে বর্তমানে কোনো সার্কুলার নেই। সব চলমান সার্কুলার দেখতে "সকল ক্যাটাগরি" নির্বাচন করুন।`
                 : searchTerm
-                ? `"${searchTerm}" এর সাথে মিলে এমন কোনো চাকরি পাওয়া যায়নি।`
-                : 'বর্তমানে কোনো চাকরির বিজ্ঞপ্তি পাওয়া যায়নি।'
+                ? `"${searchTerm}" এর সাথে মিলে এমন কোনো চাকরি পাওয়া যায়নি।`
+                : 'বর্তমানে কোনো চাকরির বিজ্ঞপ্তি পাওয়া যায়নি।'
             }
           />
           <div className="flex items-center justify-center gap-3 pt-2">
