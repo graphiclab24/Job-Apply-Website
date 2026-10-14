@@ -57,8 +57,14 @@ export const AdminJobFormPage: React.FC = () => {
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(isEdit);
-  const [saving, setSaving] = useState(false);
-  const [jobId] = useState<string>(() => id || doc(collection(db, 'jobs')).id);
+  const [jobId] = useState<string>(() => {
+    if (id) return id;
+    try {
+      return doc(collection(db, 'jobs')).id;
+    } catch {
+      return 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    }
+  });
 
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
@@ -201,23 +207,57 @@ export const AdminJobFormPage: React.FC = () => {
     if (!id) return;
     const fetchJob = async () => {
       try {
-        const snap = await getDoc(doc(db, 'jobs', id));
-        if (snap.exists()) {
-          const data = snap.data() as JobCircular;
+        let data: any = null;
+
+        // 1. Fetch from high-speed Server API (handles both id and slug)
+        try {
+          const apiRes = await fetch(`/api/jobs/${encodeURIComponent(id)}`);
+          if (apiRes.ok) {
+            const json = await apiRes.json();
+            if (json && json.title) {
+              data = json;
+            }
+          }
+        } catch {}
+
+        // 2. Fetch from Cloudflare R2 CDN if server API didn't have it
+        if (!data) {
+          try {
+            const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+            if (r2Res.ok) {
+              const r2Jobs = await r2Res.json();
+              if (Array.isArray(r2Jobs)) {
+                data = r2Jobs.find((j: any) => j.id === id || j.slug === id);
+              }
+            }
+          } catch {}
+        }
+
+        // 3. Fallback to Firestore SDK
+        if (!data) {
+          try {
+            const snap = await getDoc(doc(db, 'jobs', id));
+            if (snap.exists()) {
+              data = snap.data();
+            }
+          } catch {}
+        }
+
+        if (data) {
           setTitle(data.title || '');
           setSlug(data.slug || '');
           setCategory(data.category || 'govt');
           setStatus(data.status || 'published');
           setContent(data.content || '');
           setApplyLink(data.applyLink || '');
-          setApplyServiceEnabled(Boolean(data.applyServiceEnabled));
+          setApplyServiceEnabled(data.applyServiceEnabled !== undefined ? Boolean(data.applyServiceEnabled) : true);
           setApplicationFee(data.applicationFee || 0);
           setServiceCharge(data.serviceCharge || 0);
           setCircularLink(data.circularLink || data.circularFile || '');
           if (Array.isArray(data.circularImages)) {
             setCircularImages(data.circularImages);
           }
-          setPosts(data.posts || [{ name: '', count: 1, district: 'ALL' }]);
+          setPosts(Array.isArray(data.posts) && data.posts.length > 0 ? data.posts : [{ name: '', count: 1, district: 'ALL' }]);
 
           // Load SEO fields
           setSeoTitle(data.seoTitle || '');
@@ -229,26 +269,30 @@ export const AdminJobFormPage: React.FC = () => {
           setHasCover(hasCov);
 
           if (hasCov) {
-            try {
-              const fileDoc = await getFile(getFileId.cover(id));
-              if (fileDoc?.data) {
-                setCoverPreview(fileDoc.data);
-              } else if (data.featuredImage) {
-                setCoverPreview(data.featuredImage);
-              }
-            } catch (e) {
-              // Ignore
+            if (data.featuredImage) {
+              setCoverPreview(data.featuredImage);
+            } else {
+              try {
+                const fileDoc = await getFile(getFileId.cover(id));
+                if (fileDoc?.data) setCoverPreview(fileDoc.data);
+              } catch {}
             }
           }
 
           if (data.deadline) {
-            const dateObj = data.deadline.toDate ? data.deadline.toDate() : new Date(data.deadline);
-            setDeadline(dateObj.toISOString().slice(0, 16));
+            try {
+              const dateObj = data.deadline.toDate ? data.deadline.toDate() : new Date(data.deadline);
+              if (!isNaN(dateObj.getTime())) setDeadline(dateObj.toISOString().slice(0, 16));
+            } catch {}
           }
           if (data.publishedAt) {
-            const pDate = data.publishedAt.toDate ? data.publishedAt.toDate() : new Date(data.publishedAt);
-            setPublishedAt(pDate.toISOString().slice(0, 16));
+            try {
+              const pDate = data.publishedAt.toDate ? data.publishedAt.toDate() : new Date(data.publishedAt);
+              if (!isNaN(pDate.getTime())) setPublishedAt(pDate.toISOString().slice(0, 16));
+            } catch {}
           }
+        } else {
+          error('বিজ্ঞপ্তিটি খুঁজে পাওয়া যায়নি');
         }
       } catch (e) {
         error('তথ্য লোড করতে সমস্যা হয়েছে');
@@ -582,7 +626,9 @@ export const AdminJobFormPage: React.FC = () => {
         console.warn('Feed sync background notice:', feedErr);
       });
       invalidateCache('jobs_');
+      invalidateCache('jobs_page');
       invalidateCache('feed_');
+      invalidateCache('admin_jobs');
       fetch('/api/feed/purge-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

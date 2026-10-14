@@ -28,15 +28,19 @@ export const JobsPage: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
 
 
-  const fetchPage = async (page: number) => {
+  const fetchPage = async (page: number, bypassCache = false) => {
+    setLoading(true);
     const cacheKey = `jobs_page_${page}_${categoryFilter}_${searchTerm}`;
-    const cached = getCached<JobCircular[]>(cacheKey);
-
-    if (cached && cached.length > 0) {
-      const clean = cached.filter((j) => !isDummyJob(j));
-      setJobs(clean);
-      setLoading(false);
-      return;
+    if (!bypassCache) {
+      const cached = getCached<JobCircular[]>(cacheKey);
+      if (cached && cached.length > 0) {
+        const clean = cached.filter((j) => !isDummyJob(j));
+        if (clean.length > 0) {
+          setJobs(clean);
+          setLoading(false);
+          return;
+        }
+      }
     }
 
     // Step 1: Ultra-fast Server-Side Edge Endpoint (~2ms from RAM)
@@ -46,7 +50,7 @@ export const JobsPage: React.FC = () => {
       );
       if (apiRes.ok) {
         const data = await apiRes.json();
-        if (Array.isArray(data?.jobs)) {
+        if (Array.isArray(data?.jobs) && data.jobs.length > 0) {
           const cleanJobs = data.jobs.filter((j: any) => !isDummyJob(j));
           setJobs(cleanJobs);
           setHasMore(Boolean(data.hasMore));
@@ -68,7 +72,7 @@ export const JobsPage: React.FC = () => {
       const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
       if (r2Res.ok) {
         let r2Jobs = await r2Res.json();
-        if (Array.isArray(r2Jobs)) {
+        if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
           let cleanR2 = r2Jobs.filter((j: any) => !isDummyJob(j));
           if (categoryFilter && categoryFilter !== 'all') {
             cleanR2 = cleanR2.filter((j: any) =>
@@ -77,7 +81,7 @@ export const JobsPage: React.FC = () => {
           }
           if (searchTerm) {
             cleanR2 = cleanR2.filter((j: any) =>
-              j.title?.toLowerCase().includes(searchTerm.toLowerCase())
+              String(j.title || '').toLowerCase().includes(searchTerm.toLowerCase())
             );
           }
           setJobs(cleanR2);
@@ -89,9 +93,14 @@ export const JobsPage: React.FC = () => {
       }
     } catch {
       // Handled silently
-    } finally {
-      setLoading(false);
     }
+
+    // Step 2: In-memory fallback if any page cached
+    const page1 = getCached<JobCircular[]>('jobs_page_1');
+    if (page1 && page1.length > 0) {
+      setJobs(page1.filter((j) => !isDummyJob(j)));
+    }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -103,18 +112,24 @@ export const JobsPage: React.FC = () => {
   const filteredJobs = (jobs || [])
     .filter((j) => !isDummyJob(j))
     .filter((job) => {
-    const term = searchTerm.toLowerCase().trim();
-    const matchesSearch =
-      !term ||
-      job.title.toLowerCase().includes(term) ||
-      job.posts?.some((p) => p.name.toLowerCase().includes(term)) ||
-      job.tags?.some((t) => t.toLowerCase().includes(term)) ||
-      (Boolean(job.focusKeyword) && job.focusKeyword!.toLowerCase().includes(term));
-    const matchesCategory =
-      categoryFilter === 'all' ||
-      (categoryFilter === 'ngo' ? job.category === 'ngo' || job.category === 'brac' : job.category === categoryFilter);
-    return matchesSearch && matchesCategory;
-  });
+      if (!job) return false;
+      const term = searchTerm.toLowerCase().trim();
+      const titleMatch = Boolean(job.title && String(job.title).toLowerCase().includes(term));
+      const postsMatch = Boolean(
+        job.posts && Array.isArray(job.posts) && job.posts.some((p) => p?.name && String(p.name).toLowerCase().includes(term))
+      );
+      const tagsMatch = Boolean(
+        Array.isArray(job.tags) && job.tags.some((t) => typeof t === 'string' && t.toLowerCase().includes(term))
+      );
+      const keywordMatch = Boolean(job.focusKeyword && String(job.focusKeyword).toLowerCase().includes(term));
+      const matchesSearch = !term || titleMatch || postsMatch || tagsMatch || keywordMatch;
+
+      const cat = job.category || 'govt';
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (categoryFilter === 'ngo' ? cat === 'ngo' || cat === 'brac' : cat === categoryFilter);
+      return matchesSearch && matchesCategory;
+    });
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
@@ -204,10 +219,39 @@ export const JobsPage: React.FC = () => {
           <Spinner size="lg" text="চাকরির বিজ্ঞপ্তি লোড হচ্ছে..." />
         </div>
       ) : filteredJobs.length === 0 ? (
-        <EmptyState
-          title="কোনো বিজ্ঞপ্তি পাওয়া যায়নি"
-          description="আপনার সার্চের সাথে মিলে এমন কোনো চাকরি এই পৃষ্ঠায় বর্তমানে নেই।"
-        />
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center space-y-4">
+          <EmptyState
+            title="কোনো বিজ্ঞপ্তি পাওয়া যায়নি"
+            description={
+              categoryFilter !== 'all'
+                ? `নির্বাচিত ক্যাটাগরিতে বর্তমানে কোনো সার্কুলার নেই। সব চলমান সার্কুলার দেখতে "সকল ক্যাটাগরি" নির্বাচন করুন।`
+                : searchTerm
+                ? `"${searchTerm}" এর সাথে মিলে এমন কোনো চাকরি পাওয়া যায়নি।`
+                : 'বর্তমানে কোনো চাকরির বিজ্ঞপ্তি পাওয়া যায়নি।'
+            }
+          />
+          <div className="flex items-center justify-center gap-3 pt-2">
+            {(categoryFilter !== 'all' || searchTerm) && (
+              <button
+                onClick={() => {
+                  setCategoryFilter('all');
+                  setSearchTerm('');
+                  setCurrentPage(1);
+                  fetchPage(1, true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                সকল চাকরি দেখুন
+              </button>
+            )}
+            <button
+              onClick={() => fetchPage(currentPage, true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              রিফ্রেশ করুন
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredJobs.map((job) => {

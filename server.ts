@@ -5,8 +5,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, deleteDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { db } from './src/services/firebase';
 import { formatJobContent, repairCorruptedJobHtml, purgeCompetitorBranding } from './src/utils/formatJobContent';
 import { extractJobLocally } from './src/utils/localJobExtractor';
 
@@ -334,6 +332,14 @@ async function syncJobsToR2(jobs: any[]): Promise<boolean> {
   }
 }
 
+let r2SyncTimer: NodeJS.Timeout | null = null;
+function debouncedSyncJobsToR2(jobs: any[]) {
+  if (r2SyncTimer) clearTimeout(r2SyncTimer);
+  r2SyncTimer = setTimeout(() => {
+    syncJobsToR2(jobs).catch((err) => console.warn('[R2 Debounced Sync]:', err?.message || err));
+  }, 800);
+}
+
 /**
  * Superfast Server-Side Full Jobs Retrieval from RAM & Resilient Disk/Cloudflare R2 Backup
  */
@@ -362,34 +368,19 @@ async function getAllJobsFromServer(): Promise<any[]> {
     }
   }
 
-  // If still empty, try Firestore
-  if (jobs.length === 0) {
+  // If still empty, try default_jobs.json
+  if (jobs.length === 0 && fs.existsSync(DEFAULT_JOBS_FILE)) {
     try {
-      const q = query(collection(db, 'jobs'), limit(150));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        jobs = snap.docs
-          .map((d) => {
-            const j = d.data() as any;
-            return {
-              id: d.id,
-              ...j,
-              deadline: j.deadline?.toDate ? j.deadline.toDate().toISOString() : j.deadline || null,
-              publishedAt: j.publishedAt?.toDate ? j.publishedAt.toDate().toISOString() : j.publishedAt || null,
-              createdAt: j.createdAt?.toDate ? j.createdAt.toDate().toISOString() : j.createdAt || null,
-              updatedAt: j.updatedAt?.toDate ? j.updatedAt.toDate().toISOString() : j.updatedAt || null,
-            };
-          })
-          .filter((j) => j.status !== 'draft');
-
+      const defContent = fs.readFileSync(DEFAULT_JOBS_FILE, 'utf8');
+      const defJobs = JSON.parse(defContent);
+      if (Array.isArray(defJobs) && defJobs.length > 0) {
+        jobs = defJobs.filter((j) => !isDummyJob(j));
         if (jobs.length > 0) {
           saveStoredJobs(jobs);
           syncJobsToR2(jobs).catch(() => {});
         }
       }
-    } catch (err: any) {
-      console.warn('Firestore jobs query fallback (quota limit or connection):', err?.message || err);
-    }
+    } catch {}
   }
 
   // Ensure zero dummy jobs are ever returned
@@ -473,46 +464,26 @@ app.get('/api/feed/latest', async (_req: Request, res: Response) => {
     return res.json({ posts: serverFeedCache.data, fromCache: true });
   }
 
-  // 2. Fetch from Firestore once, cache in RAM
+  // 2. Build feed directly from stored jobs & R2 CDN (Zero Firestore, ultra-fast)
   try {
-    const feedRef = doc(db, 'feed', 'latest');
-    const snap = await getDoc(feedRef);
-
-    let posts: any[] = [];
-    if (snap.exists()) {
-      posts = snap.data()?.posts || [];
-    } else {
-      // Fallback query
-      const q = query(collection(db, 'jobs'), where('status', '==', 'published'), limit(30));
-      const jobsSnap = await getDocs(q);
-      posts = jobsSnap.docs.map((d) => {
-        const j = d.data() as any;
-        return {
-          id: d.id,
-          title: j.title || '',
-          slug: j.slug || d.id,
-          category: j.category || 'govt',
-          deadline: j.deadline?.toDate ? j.deadline.toDate().toISOString() : j.deadline || null,
-          applyServiceEnabled: Boolean(j.applyServiceEnabled),
-        };
-      });
-    }
-
-    serverFeedCache = { data: posts, timestamp: Date.now() };
-    return res.json({ posts, fromCache: false });
-  } catch (err: any) {
-    console.warn('Server feed fetch notice:', err?.message || err);
-    const fallbackJobs = await getAllJobsFromServer();
-    const posts = fallbackJobs.slice(0, 30).map((j) => ({
+    const allJobs = await getAllJobsFromServer();
+    const published = allJobs
+      .filter((j) => j.status === 'published' && !isDummyJob(j))
+      .slice(0, 30);
+    const posts = published.map((j) => ({
       id: j.id,
       title: j.title || '',
       slug: j.slug || j.id,
       category: j.category || 'govt',
       deadline: j.deadline || null,
       applyServiceEnabled: Boolean(j.applyServiceEnabled),
+      featuredImage: j.featuredImage || null,
     }));
+
     serverFeedCache = { data: posts, timestamp: Date.now() };
-    return res.json({ posts, fromCache: true });
+    return res.json({ posts, fromCache: false });
+  } catch (err: any) {
+    return res.json({ posts: [], fromCache: false });
   }
 });
 
@@ -532,47 +503,19 @@ app.get('/api/jobs/:slug', async (req: Request, res: Response) => {
     return res.json(cached.data);
   }
 
-  // 2. Query Firestore once, cache in RAM
-  try {
-    const docRef = doc(db, 'jobs', slug);
-    const qSlug = query(collection(db, 'jobs'), where('slug', '==', slug), limit(1));
-
-    const [docSnap, querySnap] = await Promise.all([
-      getDoc(docRef).catch(() => null),
-      getDocs(qSlug).catch(() => null),
-    ]);
-
-    let resolvedJob: any = null;
-    if (querySnap && !querySnap.empty) {
-      const d = querySnap.docs[0];
-      resolvedJob = { id: d.id, ...d.data() };
-    } else if (docSnap && docSnap.exists()) {
-      resolvedJob = { id: docSnap.id, ...docSnap.data() };
-    }
-
-    if (resolvedJob) {
-      // Normalize dates to ISO strings for clean JSON
-      if (resolvedJob.deadline?.toDate) resolvedJob.deadline = resolvedJob.deadline.toDate().toISOString();
-      if (resolvedJob.publishedAt?.toDate) resolvedJob.publishedAt = resolvedJob.publishedAt.toDate().toISOString();
-      if (resolvedJob.createdAt?.toDate) resolvedJob.createdAt = resolvedJob.createdAt.toDate().toISOString();
-      if (resolvedJob.updatedAt?.toDate) resolvedJob.updatedAt = resolvedJob.updatedAt.toDate().toISOString();
-
-      serverJobsCache.set(slug, { data: resolvedJob, timestamp: Date.now() });
-      if (resolvedJob.id && resolvedJob.id !== slug) {
-        serverJobsCache.set(resolvedJob.id, { data: resolvedJob, timestamp: Date.now() });
-      }
-      return res.json(resolvedJob);
-    }
-  } catch (err: any) {
-    console.warn('Server job lookup notice (quota limit or connection):', err?.message || err);
-  }
-
-  // 3. Fallback to server local jobs backup
+  // 2. Resolve job from server local jobs / R2 CDN
   const allJobs = await getAllJobsFromServer();
-  const fallback = allJobs.find((j) => j.slug === slug || j.id === slug);
-  if (fallback) {
-    serverJobsCache.set(slug, { data: fallback, timestamp: Date.now() });
-    return res.json(fallback);
+  const decodedSlug = decodeURIComponent(slug);
+  const resolved = allJobs.find(
+    (j) => j.id === slug || j.slug === slug || (j.slug && decodeURIComponent(j.slug) === decodedSlug)
+  );
+
+  if (resolved) {
+    serverJobsCache.set(slug, { data: resolved, timestamp: Date.now() });
+    if (resolved.id && resolved.id !== slug) {
+      serverJobsCache.set(resolved.id, { data: resolved, timestamp: Date.now() });
+    }
+    return res.json(resolved);
   }
 
   return res.status(404).json({ error: 'Job not found' });
@@ -595,34 +538,7 @@ app.get('/s/:code', async (req: Request, res: Response) => {
     found.clicks = (found.clicks || 0) + 1;
     found.lastClickedAt = new Date().toISOString();
     saveStoredShortLinks(stored);
-
-    // Update Firestore in background if possible
-    try {
-      updateDoc(doc(db, 'short_links', found.id), {
-        clicks: increment(1),
-        lastClickedAt: serverTimestamp(),
-      }).catch(() => {});
-    } catch {}
-
     return res.redirect(found.originalUrl);
-  }
-
-  // 2. Fallback to Firestore lookup
-  try {
-    const snap = await getDoc(doc(db, 'short_links', cleanCode));
-    if (snap.exists()) {
-      const data = snap.data();
-      const targetUrl = data.originalUrl || '/';
-
-      updateDoc(doc(db, 'short_links', cleanCode), {
-        clicks: increment(1),
-        lastClickedAt: serverTimestamp(),
-      }).catch(() => {});
-
-      return res.redirect(targetUrl);
-    }
-  } catch (err) {
-    console.warn('Short link redirect lookup notice:', err);
   }
 
   return res.redirect('/');
@@ -632,33 +548,8 @@ app.get('/s/:code', async (req: Request, res: Response) => {
  * 0-Cost URL Shortener API Endpoints (Admin & Applet)
  * Provides ultra-resilient short links loading with zero Firestore index or quota dependency
  */
-app.get('/api/shortener/links', async (req: Request, res: Response) => {
-  let items = getStoredShortLinks();
-  try {
-    const snap = await getDocs(collection(db, 'short_links'));
-    if (!snap.empty) {
-      const firestoreItems = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          originalUrl: data.originalUrl || '',
-          title: data.title || '',
-          clicks: data.clicks || 0,
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || null,
-          lastClickedAt: data.lastClickedAt?.toDate ? data.lastClickedAt.toDate().toISOString() : data.lastClickedAt || null,
-        };
-      });
-      // Merge unique
-      const map = new Map<string, any>();
-      items.forEach((it) => map.set(it.id, it));
-      firestoreItems.forEach((it) => map.set(it.id, it));
-      items = Array.from(map.values());
-      saveStoredShortLinks(items);
-    }
-  } catch (err: any) {
-    console.warn('Firestore short links fetch notice (quota/offline fallback):', err?.message);
-  }
-
+app.get('/api/shortener/links', async (_req: Request, res: Response) => {
+  const items = getStoredShortLinks();
   items.sort((a, b) => {
     const tA = new Date(a.createdAt || 0).getTime();
     const tB = new Date(b.createdAt || 0).getTime();
@@ -698,14 +589,6 @@ app.post('/api/shortener/links', async (req: Request, res: Response) => {
     }
     saveStoredShortLinks(stored);
 
-    // Save to Firestore asynchronously
-    try {
-      const docRef = doc(db, 'short_links', cleanId);
-      await setDoc(docRef, { ...newDoc, createdAt: serverTimestamp() }, { merge: true });
-    } catch (fbErr) {
-      console.warn('Firestore short link write notice (saved to disk):', fbErr);
-    }
-
     return res.json({ success: true, link: newDoc });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message });
@@ -721,11 +604,6 @@ app.delete('/api/shortener/links/:code', async (req: Request, res: Response) => 
     // Remove from disk
     const stored = getStoredShortLinks().filter((l) => l.id !== cleanCode);
     saveStoredShortLinks(stored);
-
-    // Remove from Firestore
-    try {
-      await deleteDoc(doc(db, 'short_links', cleanCode));
-    } catch {}
 
     return res.json({ success: true });
   } catch (err: any) {
@@ -789,7 +667,7 @@ app.post('/api/feed/purge-cache', (req: Request, res: Response) => {
   if (isDelete && id) {
     const stored = getStoredJobs().filter((j) => j.id !== id);
     saveStoredJobs(stored);
-    syncJobsToR2(stored).catch(() => {});
+    debouncedSyncJobsToR2(stored);
   } else if (job && (job.id || id)) {
     const stored = getStoredJobs();
     const jobId = job.id || id;
@@ -805,7 +683,7 @@ app.post('/api/feed/purge-cache', (req: Request, res: Response) => {
       stored.unshift(normalized);
     }
     saveStoredJobs(stored);
-    syncJobsToR2(stored).catch(() => {});
+    debouncedSyncJobsToR2(stored);
   }
 
   res.json({ success: true, message: 'Server cache, disk backup and Cloudflare R2 purged/synced' });
@@ -846,22 +724,32 @@ app.post('/api/admin/jobs/save', async (req: Request, res: Response) => {
     if (normalized.slug) serverJobsCache.set(normalized.slug, { data: normalized, timestamp: Date.now() });
     serverJobsCache.set(jobId, { data: normalized, timestamp: Date.now() });
 
-    // Immediate sync to Cloudflare R2
-    syncJobsToR2(stored).catch((e) => console.warn('R2 sync notice:', e));
-
-    // Non-blocking Firestore sync in background (doesn't fail if quota is reached)
-    try {
-      const docRef = doc(db, 'jobs', jobId);
-      setDoc(docRef, normalized, { merge: true }).catch((fbErr) => {
-        console.warn('Background Firestore save notice (quota limit or connection):', fbErr?.message || fbErr);
-      });
-    } catch {}
+    // Immediate debounced sync to Cloudflare R2
+    debouncedSyncJobsToR2(stored);
 
     return res.json({
       success: true,
       message: 'বিজ্ঞপ্তি সফলভাবে সেভ করা হয়েছে এবং Cloudflare R2-তে সিঙ্ক হয়েছে',
       job: normalized,
     });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
+
+app.delete('/api/jobs/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    let stored = getStoredJobs().filter((j) => j.id !== id && j.slug !== id);
+    saveStoredJobs(stored);
+
+    serverFeedCache = null;
+    serverAllJobsCache = { data: stored, timestamp: Date.now() };
+    serverJobsCache.delete(id);
+
+    debouncedSyncJobsToR2(stored);
+
+    return res.json({ success: true, message: 'বিজ্ঞপ্তি মুছে ফেলা হয়েছে' });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message });
   }
@@ -950,7 +838,7 @@ app.post('/api/storage/config', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/upload', async (req: Request, res: Response) => {
+app.post(['/api/upload', '/api/admin/upload-file'], async (req: Request, res: Response) => {
   try {
     const { fileData, fileName, folder = 'files', mimeType } = req.body || {};
     if (!fileData) {
@@ -1439,11 +1327,6 @@ app.post('/api/admin/exams/save', async (req: Request, res: Response) => {
     saveStoredExams(stored);
     syncExamsToR2(stored).catch(() => {});
 
-    // Non-blocking background Firestore sync
-    try {
-      setDoc(doc(db, 'exams', id), cleanNotice, { merge: true }).catch(() => {});
-    } catch {}
-
     return res.json({ success: true, notice: cleanNotice });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message });
@@ -1456,11 +1339,6 @@ app.delete('/api/admin/exams/:id', async (req: Request, res: Response) => {
     const stored = getStoredExams().filter((e) => e.id !== id);
     saveStoredExams(stored);
     syncExamsToR2(stored).catch(() => {});
-
-    // Non-blocking background Firestore delete
-    try {
-      deleteDoc(doc(db, 'exams', id)).catch(() => {});
-    } catch {}
 
     return res.json({ success: true });
   } catch (err: any) {
@@ -1546,11 +1424,6 @@ app.post('/api/applications/submit', async (req: Request, res: Response) => {
     // Forward to Google Sheets Webhook (Instant, 0 Quota, 1M+ Scale)
     forwardToGoogleSheetsWebhook(newApp).catch(() => {});
 
-    // Non-blocking Firestore background backup (fails gracefully if quota hit)
-    try {
-      setDoc(doc(db, 'applications', appId), newApp, { merge: true }).catch(() => {});
-    } catch {}
-
     return res.json({ success: true, id: appId, application: newApp });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message });
@@ -1583,11 +1456,6 @@ app.patch('/api/applications/:id/status', async (req: Request, res: Response) =>
       id,
       ...updateData,
     }).catch(() => {});
-
-    // Non-blocking Firestore update
-    try {
-      setDoc(doc(db, 'applications', id), updateData, { merge: true }).catch(() => {});
-    } catch {}
 
     return res.json({ success: true, application: stored[idx] });
   } catch (err: any) {
@@ -1679,19 +1547,6 @@ app.post('/api/admin/applications/sync-sheets', async (_req: Request, res: Respo
     const webhookUrl = conf.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL;
 
     let apps = getStoredApplications();
-
-    // If local disk is empty, load from Firestore
-    if (apps.length === 0) {
-      try {
-        const snap = await getDocs(collection(db, 'applications'));
-        apps = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (apps.length > 0) {
-          saveStoredApplications(apps);
-        }
-      } catch (err: any) {
-        console.warn('Firestore fallback sync notice:', err?.message || err);
-      }
-    }
 
     if (apps.length === 0) {
       return res.json({

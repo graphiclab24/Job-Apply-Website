@@ -14,7 +14,7 @@ export async function recoverLocalJobs(): Promise<number> {
       const key = localStorage.key(i);
       if (!key) continue;
 
-      if (key.includes('admin_jobs') || key.includes('draft_job') || key.includes('jobs_page')) {
+      if (key.startsWith('unsaved_job_') || key.startsWith('draft_job_') || key.startsWith('offline_draft_')) {
         try {
           const raw = localStorage.getItem(key);
           if (raw) {

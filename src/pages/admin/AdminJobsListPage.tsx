@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, deleteDoc, doc, orderBy, query } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import { deleteFile, getFileId } from '../../services/files';
 import { syncJobToFeed } from '../../services/feed';
 import { getCached, setCached, precacheJob, invalidateCache } from '../../services/cache';
@@ -76,22 +74,21 @@ export const AdminJobsListPage: React.FC = () => {
         }
       } catch {}
 
-      // 2. Try client-side Firestore SDK
+      // 2. Fallback to Cloudflare R2 CDN directly
       try {
-        const snap = await getDocs(collection(db, 'jobs'));
-        if (!snap.empty) {
-          const list = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() } as JobCircular))
-            .filter((j) => !isDummyJob(j));
-          setJobs(list);
-          setCached('admin_jobs', list);
-          list.forEach(precacheJob);
-          setLoading(false);
-          return;
+        const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+        if (r2Res.ok) {
+          const r2Jobs = await r2Res.json();
+          if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
+            const clean = r2Jobs.filter((j: any) => !isDummyJob(j));
+            setJobs(clean);
+            setCached('admin_jobs', clean);
+            clean.forEach(precacheJob);
+            setLoading(false);
+            return;
+          }
         }
-      } catch (fbErr: any) {
-        console.warn('Direct Firestore read notice:', fbErr?.message);
-      }
+      } catch {}
 
       // 3. Fallback to cached jobs
       const cached = getCached<JobCircular[]>('admin_jobs');
@@ -122,30 +119,18 @@ export const AdminJobsListPage: React.FC = () => {
 
     setDeletingId(id);
     try {
-      try {
-        await deleteDoc(doc(db, 'jobs', id));
-      } catch (fbErr) {
-        console.warn('Firestore delete notice:', fbErr);
-      }
+      await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
       try {
         await deleteFile(getFileId.cover(id));
-      } catch (e) {
-        // Non-fatal
-      }
+      } catch {}
       await syncJobToFeed(id, {}, 'delete').catch(() => {});
       invalidateCache('admin_jobs');
       invalidateCache('feed_');
       invalidateCache('jobs_');
-      fetch('/api/feed/purge-cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, isDelete: true }),
-      }).catch(() => {});
       setJobs((prev) => prev.filter((j) => j.id !== id));
       success('বিজ্ঞপ্তিটি সফলভাবে মুছে ফেলা হয়েছে');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `jobs/${id}`);
-      error('বিজ্ঞপ্তি মুছতে ব্যর্থ হয়েছে');
+    } catch (err: any) {
+      error(err?.message || 'বিজ্ঞপ্তি মুছতে ব্যর্থ হয়েছে');
     } finally {
       setDeletingId(null);
     }
