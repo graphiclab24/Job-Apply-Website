@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { fetchJobsList } from '../../services/jobsStore';
 
 export const SitemapView: React.FC = () => {
   const [xmlContent, setXmlContent] = useState<string>('');
@@ -25,7 +26,7 @@ export const SitemapView: React.FC = () => {
         // Fallback to dynamic generation
       }
 
-      // 2. Dynamic generation fallback directly from Firestore
+      // 2. Dynamic generation fallback from R2 jobs.json
       try {
         const base = 'https://bdjobapply.site';
         const today = new Date().toISOString().split('T')[0];
@@ -36,22 +37,8 @@ export const SitemapView: React.FC = () => {
           { loc: `${base}/register`, priority: '0.5', changefreq: 'monthly', lastmod: today },
         ];
 
-        let jobsList: any[] = [];
-        try {
-          const apiRes = await fetch('/api/jobs');
-          if (apiRes.ok) {
-            const apiData = await apiRes.json();
-            if (Array.isArray(apiData?.jobs)) jobsList = apiData.jobs;
-          }
-        } catch {
-          try {
-            const r2Res = await fetch('https://files.bdjobapply.site/jobs.json');
-            if (r2Res.ok) {
-              const r2Data = await r2Res.json();
-              if (Array.isArray(r2Data)) jobsList = r2Data;
-            }
-          } catch {}
-        }
+        // R2 jobs.json (ব্যর্থ হলে static fallback নিজেই হ্যান্ডল করে)
+        const jobsList: any[] = await fetchJobsList();
 
         jobsList.forEach((data) => {
           const slug = data.slug || data.id;
