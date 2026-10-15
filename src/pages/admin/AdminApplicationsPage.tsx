@@ -9,7 +9,6 @@ import {
   serverTimestamp,
   query,
   where,
-  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { JobApplication, CandidateProfile, ApplicationStatus } from '../../types';
@@ -18,7 +17,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { canTransitionStatus, createUserNotification } from '../../utils/statusTransitions';
-import { updateApplicationStatus, fetchApplications } from '../../services/applicationsService';
+import { fetchJobsList } from '../../services/jobsStore';
 import { ApplicationCardItem } from '../../components/admin/ApplicationCardItem';
 import {
   RejectModal,
@@ -26,7 +25,19 @@ import {
   CompletePaidModal,
   AutofillModal,
 } from '../../components/admin/ApplicationActionModals';
-import { Download } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
+
+// ৫ মিনিট পর্যন্ত একই ধাপের তালিকা নতুন করে Firestore থেকে পড়া হবে না।
+// এটি শুধু মেমোরিতে থাকে, ব্রাউজারের স্থায়ী স্টোরেজে নয় (ব্যক্তিগত তথ্য)।
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const stepCache = new Map<string, { data: JobApplication[]; ts: number }>();
+
+const sortByCreated = (list: JobApplication[]) =>
+  [...list].sort((a: any, b: any) => {
+    const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+    const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+    return tB - tA;
+  });
 
 export const AdminApplicationsPage: React.FC = () => {
   const { step } = useParams<{ step: string }>();
@@ -35,6 +46,7 @@ export const AdminApplicationsPage: React.FC = () => {
 
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeApp, setActiveApp] = useState<JobApplication | null>(null);
   const [activeProfile, setActiveProfile] = useState<CandidateProfile | null>(null);
 
@@ -43,31 +55,33 @@ export const AdminApplicationsPage: React.FC = () => {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [autofillModalOpen, setAutofillModalOpen] = useState(false);
 
-  // In-memory cache for job applyLinks to avoid repeated reads
+  // জবের applyLink মেমোরিতে রাখা হয়
   const jobLinksRef = useRef<Record<string, string>>({});
 
-  const enrichApplications = async (list: JobApplication[]): Promise<JobApplication[]> => {
-    const missingJobIds = Array.from(
-      new Set(list.filter((a) => !a.applyLink && a.jobId).map((a) => a.jobId))
-    );
+  const currentStep = step || 'waiting';
 
-    if (missingJobIds.length > 0) {
-      await Promise.all(
-        missingJobIds.map(async (jId) => {
-          if (jobLinksRef.current[jId] !== undefined) return;
-          try {
-            const jSnap = await getDoc(doc(db, 'jobs', jId));
-            if (jSnap.exists()) {
-              const jData = jSnap.data();
-              jobLinksRef.current[jId] = jData.applyLink || '';
-            } else {
-              jobLinksRef.current[jId] = '';
-            }
-          } catch {
-            jobLinksRef.current[jId] = '';
-          }
-        })
-      );
+  const stepStatusMap: Record<string, ApplicationStatus[]> = {
+    waiting: ['waiting'],
+    'apply-now': ['apply_now'],
+    check: ['checking', 'correction'],
+    'payment-now': ['payment_now'],
+    complete: ['applied'],
+    rejected: ['rejected'],
+  };
+  const targetStatuses = stepStatusMap[currentStep] || ['waiting'];
+
+  // জবের applyLink এক বারে R2 থেকে আনা (Firestore-এর jobs পড়া হয় না)
+  const enrichApplications = async (list: JobApplication[]): Promise<JobApplication[]> => {
+    const needsLinks = list.some((a) => !a.applyLink && a.jobId);
+    if (needsLinks) {
+      try {
+        const jobs = await fetchJobsList(true);
+        jobs.forEach((j: any) => {
+          jobLinksRef.current[j.id] = j.applyLink || '';
+        });
+      } catch {
+        // লিংক না পেলে আবেদন খালি লিংক নিয়েই দেখাবে
+      }
     }
 
     return list.map((a) => {
@@ -78,83 +92,60 @@ export const AdminApplicationsPage: React.FC = () => {
     });
   };
 
-  const stepStatusMap: Record<string, ApplicationStatus[]> = {
-    waiting: ['waiting'],
-    'apply-now': ['apply_now'],
-    check: ['checking', 'correction'],
-    'payment-now': ['payment_now'],
-    complete: ['applied'],
-    rejected: ['rejected'],
+  // একটি ধাপের তালিকা লোড: ক্যাশ থাকলে সেটি, না থাকলে Firestore থেকে একবার
+  const loadApps = async (force = false) => {
+    const key = currentStep;
+
+    if (!force) {
+      const cached = stepCache.get(key);
+      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        setApps(cached.data);
+        setLoading(false);
+        return;
+      }
+    }
+
+    force ? setRefreshing(true) : setLoading(true);
+    try {
+      const q = query(collection(db, 'applications'), where('status', 'in', targetStatuses));
+      const snap = await getDocs(q);
+      const list = sortByCreated(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() } as JobApplication))
+      );
+      const enriched = await enrichApplications(list);
+      setApps(enriched);
+      stepCache.set(key, { data: enriched, ts: Date.now() });
+    } catch (err: any) {
+      console.warn('Applications load failed:', err?.message || err);
+      error('আবেদন তালিকা লোড করতে ব্যর্থ হয়েছে। একটু পরে আবার রিফ্রেশ করুন।');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const currentStep = step || 'waiting';
-  const targetStatuses = stepStatusMap[currentStep] || ['waiting'];
-  const isActivePipeline = ['waiting', 'apply-now', 'check', 'payment-now'].includes(currentStep);
-
   useEffect(() => {
-    setLoading(true);
+    loadApps(false);
+  }, [currentStep]);
 
-    // Rule: onSnapshot for admin's active ongoing pipeline, getDocs once for completed/rejected
-    if (isActivePipeline) {
-      const q = query(
-        collection(db, 'applications'),
-        where('status', 'in', targetStatuses)
-      );
-
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          const list = snapshot.docs
-            .map((d) => ({ id: d.id, ...d.data() } as JobApplication))
-            .sort((a, b) => {
-              const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-              const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-              return tB - tA;
-            });
-          enrichApplications(list).then((enriched) => {
-            setApps(enriched);
-            setLoading(false);
-          });
-        },
-        (err) => {
-          console.error('Snapshot error:', err);
-          setLoading(false);
-        }
-      );
-
-      return () => unsubscribe();
-    } else {
-      // Completed or Rejected: single getDocs query
-      const fetchOnce = async () => {
-        try {
-          const q = query(
-            collection(db, 'applications'),
-            where('status', 'in', targetStatuses)
-          );
-          const snap = await getDocs(q);
-          const list = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() } as JobApplication))
-            .sort((a, b) => {
-              const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-              const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-              return tB - tA;
-            });
-          const enriched = await enrichApplications(list);
-          setApps(enriched);
-        } catch (err) {
-          error('আবেদন তালিকা লোড করতে ব্যর্থ হয়েছে');
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchOnce();
+  // কাজ শেষ হলে তালিকা থেকে আবেদনটি সরিয়ে দেওয়া (নতুন করে পুরো তালিকা পড়তে হয় না)
+  const removeFromList = (appId: string) => {
+    setApps((prev) => {
+      const next = prev.filter((a) => a.id !== appId);
+      stepCache.set(currentStep, { data: next, ts: Date.now() });
+      return next;
+    });
+    // অন্য ধাপের ক্যাশ পুরনো হয়ে গেছে, তাই সব ক্যাশ খালি
+    if (currentStep !== 'rejected') {
+      Array.from(stepCache.keys()).forEach((k) => {
+        if (k !== currentStep) stepCache.delete(k);
+      });
     }
-  }, [step]);
+  };
 
   const handleVerifyPayment = async (app: JobApplication) => {
     if (!canTransitionStatus(app.status, 'apply_now')) {
-      error('এই স্ট্যাটাস পরিবর্তন অনুমোদিত নয়');
+      error('এই স্ট্যাটাস পরিবর্তন অনুমোদিত নয়');
       return;
     }
 
@@ -170,42 +161,37 @@ export const AdminApplicationsPage: React.FC = () => {
       await createUserNotification(
         app.uid,
         app.id,
-        'পেমেন্ট যাচাই সফল হয়েছে',
-        `আপনার আবেদন (${app.id})-এর ফি যাচাই করা হয়েছে। অপারেটর এখন Teletalk পোর্টালে ফর্ম পূরণ করছেন।`
+        'পেমেন্ট যাচাই সফল হয়েছে',
+        `আপনার আবেদন (${app.id})-এর ফি যাচাই করা হয়েছে। অপারেটর এখন Teletalk পোর্টালে ফর্ম পূরণ করছেন।`
       );
 
-      success('পেমেন্ট যাচাই সফল! আবেদনটি Apply Now তালিকায় পাঠানো হয়েছে।');
+      removeFromList(app.id);
+      success('পেমেন্ট যাচাই সফল! আবেদনটি Apply Now তালিকায় পাঠানো হয়েছে।');
     } catch (err) {
-      error('আপডেট করতে ব্যর্থ হয়েছে');
+      error('আপডেট করতে ব্যর্থ হয়েছে');
     }
   };
 
   const handleRejectConfirm = async (reason: string) => {
     if (!activeApp) return;
     try {
-      await updateApplicationStatus(activeApp.id, {
+      await updateDoc(doc(db, 'applications', activeApp.id), {
         status: 'rejected',
         rejectReason: reason,
+        updatedAt: serverTimestamp(),
       });
-
-      try {
-        await updateDoc(doc(db, 'applications', activeApp.id), {
-          status: 'rejected',
-          rejectReason: reason,
-          updatedAt: serverTimestamp(),
-        });
-      } catch {}
 
       await createUserNotification(
         activeApp.uid,
         activeApp.id,
-        'আবেদন বাতিল করা হয়েছে',
-        `আপনার আবেদন (${activeApp.id}) বাতিল করা হয়েছে। কারণ: ${reason}`
+        'আবেদন বাতিল করা হয়েছে',
+        `আপনার আবেদন (${activeApp.id}) বাতিল করা হয়েছে। কারণ: ${reason}`
       );
 
-      success('আবেদনটি বাতিল করা হয়েছে।');
+      removeFromList(activeApp.id);
+      success('আবেদনটি বাতিল করা হয়েছে।');
     } catch (err) {
-      error('বাতিল করতে ব্যর্থ হয়েছে');
+      error('বাতিল করতে ব্যর্থ হয়েছে');
     }
   };
 
@@ -217,72 +203,62 @@ export const AdminApplicationsPage: React.FC = () => {
         setActiveProfile(snap.data() as CandidateProfile);
         setAutofillModalOpen(true);
       } else {
-        error('প্রার্থীর সিভি প্রোফাইল পাওয়া যায়নি');
+        error('প্রার্থীর সিভি প্রোফাইল পাওয়া যায়নি');
       }
     } catch (e) {
-      error('প্রোফাইল লোড করতে সমস্যা হয়েছে');
+      error('প্রোফাইল লোড করতে সমস্যা হয়েছে');
     }
   };
 
   const handleUploadSoftCopy = async (result: { hasFile: boolean; driveUrl?: string }) => {
     if (!activeApp) return;
     try {
-      await updateApplicationStatus(activeApp.id, {
+      await updateDoc(doc(db, 'applications', activeApp.id), {
         status: 'checking',
+        hasSoftCopy: result.hasFile,
+        softCopyDriveUrl: result.driveUrl || null,
         softCopyUrl: result.driveUrl || '',
+        updatedAt: serverTimestamp(),
       });
-
-      try {
-        await updateDoc(doc(db, 'applications', activeApp.id), {
-          status: 'checking',
-          hasSoftCopy: result.hasFile,
-          softCopyDriveUrl: result.driveUrl || null,
-          updatedAt: serverTimestamp(),
-        });
-      } catch {}
 
       await createUserNotification(
         activeApp.uid,
         activeApp.id,
-        'সফট কপি প্রস্তুত হয়েছে',
-        `আপনার আবেদন (${activeApp.id})-এর সফট কপি প্রস্তুত হয়েছে। Check Application পেজে গিয়ে সফট কপিটি দেখে অনুমোদন দিন।`
+        'সফট কপি প্রস্তুত হয়েছে',
+        `আপনার আবেদন (${activeApp.id})-এর সফট কপি প্রস্তুত হয়েছে। Check Application পেজে গিয়ে সফট কপিটি দেখে অনুমোদন দিন।`
       );
 
-      success('সফট কপি সফলভাবে প্রার্থীকে পাঠানো হয়েছে!');
+      removeFromList(activeApp.id);
+      success('সফট কপি সফলভাবে প্রার্থীকে পাঠানো হয়েছে!');
     } catch (err) {
-      error('সফট কপি আপডেট করতে সমস্যা হয়েছে');
+      error('সফট কপি আপডেট করতে সমস্যা হয়েছে');
     }
   };
 
   const handleCompletePaid = async (result: { hasFile: boolean; driveUrl?: string }) => {
     if (!activeApp) return;
     try {
-      await updateApplicationStatus(activeApp.id, {
+      await updateDoc(doc(db, 'applications', activeApp.id), {
         status: 'applied',
+        hasPaidCopy: result.hasFile,
+        paidCopyDriveUrl: result.driveUrl || null,
         paidCopyUrl: result.driveUrl || '',
+        hasSoftCopy: false,
+        softCopyDriveUrl: null,
+        updatedAt: serverTimestamp(),
       });
-
-      try {
-        await updateDoc(doc(db, 'applications', activeApp.id), {
-          status: 'applied',
-          hasPaidCopy: result.hasFile,
-          paidCopyDriveUrl: result.driveUrl || null,
-          hasSoftCopy: false,
-          softCopyDriveUrl: null,
-          updatedAt: serverTimestamp(),
-        });
-      } catch {}
 
       await createUserNotification(
         activeApp.uid,
         activeApp.id,
         'আবেদন সম্পন্ন! পেইড কপি ডাউনলোড করুন',
-        `অভিনন্দন! আপনার আবেদন (${activeApp.id}) সফলভাবে সম্পন্ন হয়েছে এবং অফিসিয়াল পেইড কপি সরবরাহ করা হয়েছে।`
+        `অভিনন্দন! আপনার আবেদন (${activeApp.id}) সফলভাবে সম্পন্ন হয়েছে এবং অফিসিয়াল পেইড কপি সরবরাহ করা হয়েছে।`
       );
 
-      success('আবেদন সম্পন্ন হয়েছে এবং পেইড কপি যুক্ত হয়েছে!');
+      removeFromList(activeApp.id);
+      success('আবেদন সম্পন্ন হয়েছে এবং পেইড কপি যুক্ত হয়েছে!');
     } catch (err) {
-      error('পেইড কপি সংরক্ষণ করতে সমস্যা হয়েছে');
+      error('পেইড কপি সংরক্ষণ করতে সমস্যা হয়েছে');
     }
   };
 
@@ -304,6 +280,16 @@ export const AdminApplicationsPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => loadApps(true)}
+            disabled={refreshing || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+            title="নতুন করে লোড করুন"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>রিফ্রেশ</span>
+          </button>
           <a
             href="/bd-job-autofill-extension.zip"
             download="bd-job-autofill-extension.zip"
