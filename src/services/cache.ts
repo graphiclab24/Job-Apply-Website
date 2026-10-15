@@ -1,3 +1,5 @@
+import { fetchJobsList } from './jobsStore';
+
 /**
  * Superfast Multi-Layer Cache for BD Job Apply
  * 1. In-memory Map (0ms)
@@ -165,6 +167,8 @@ const inFlightPrefetches = new Set<string>();
  * circular images, application fee, and posts table) into memory and localStorage.
  * Triggered on link hover (desktop) or touch start (mobile), or idle background preloading.
  * Result: Job details page opens in 0ms with zero loading delay!
+ *
+ * R2 jobs.json থেকে পড়ে (কোনো /api বা Firestore কল নেই)
  */
 export async function prefetchJobDetail(slugOrId: string): Promise<void> {
   if (!slugOrId) return;
@@ -178,19 +182,17 @@ export async function prefetchJobDetail(slugOrId: string): Promise<void> {
   inFlightPrefetches.add(slugOrId);
 
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(slugOrId)}`);
-    if (res.ok) {
-      const fullJob = await res.json();
-      if (fullJob && fullJob.title) {
-        setCached(`job_detail_${slugOrId}`, fullJob);
-        if (fullJob.slug) setCached(`job_detail_${fullJob.slug}`, fullJob);
-        if (fullJob.id) setCached(`job_detail_${fullJob.id}`, fullJob);
+    const list = await fetchJobsList();
+    const fullJob: any = list.find((j: any) => j.slug === slugOrId || j.id === slugOrId);
+    if (fullJob && fullJob.title) {
+      setCached(`job_detail_${slugOrId}`, fullJob);
+      if (fullJob.slug) setCached(`job_detail_${fullJob.slug}`, fullJob);
+      if (fullJob.id) setCached(`job_detail_${fullJob.id}`, fullJob);
 
-        // Speculatively preload the image in browser asset cache
-        if (fullJob.featuredImage && typeof window !== 'undefined') {
-          const img = new Image();
-          img.src = fullJob.featuredImage;
-        }
+      // Speculatively preload the image in browser asset cache
+      if (fullJob.featuredImage && typeof window !== 'undefined') {
+        const img = new Image();
+        img.src = fullJob.featuredImage;
       }
     }
   } catch {
