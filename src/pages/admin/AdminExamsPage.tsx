@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import { ExamNotice } from '../../types';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
@@ -9,34 +7,44 @@ import { Spinner } from '../../components/common/Spinner';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
 import { invalidateCache, setCached } from '../../services/cache';
-import { Award, Plus, Trash2, Calendar, FileText } from 'lucide-react';
+import { compressImageToDataUrl } from '../../services/files';
+import { R2_BASE, putPublicJson, uploadPublicImage } from '../../services/jobsStore';
+import { Plus, Trash2, Calendar, Image as ImageIcon, X } from 'lucide-react';
+
+// সর্বোচ্চ কতটি নোটিশ রাখা হবে (exams.json ছোট রাখতে)
+const MAX_NOTICES = 50;
+
+type Notice = ExamNotice & { imageUrl?: string };
 
 export const AdminExamsPage: React.FC = () => {
-  const [notices, setNotices] = useState<ExamNotice[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('Exam Date');
   const [content, setContent] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const { success, error } = useToast();
 
+  // R2-এর exams.json থেকে তালিকা (Firestore নয়)
   const fetchNotices = async () => {
     try {
-      const res = await fetch('/api/exams');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.exams)) {
-          setNotices(data.exams);
-          return;
-        }
+      const res = await fetch(`${R2_BASE}/exams.json?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error(`exams.json লোড ব্যর্থ (HTTP ${res.status})`);
       }
-      const snap = await getDocs(collection(db, 'exams'));
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExamNotice));
-      setNotices(list);
-    } catch (e) {
-      // Silently handled
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        throw new Error('exams.json-এর ফরম্যাট ভুল');
+      }
+      setNotices(data);
+    } catch (err: any) {
+      console.error('Exams load failed:', err);
+      error(err?.message || 'নোটিশ তালিকা লোড করা যায়নি');
+      setNotices([]);
     } finally {
       setLoading(false);
     }
@@ -46,75 +54,71 @@ export const AdminExamsPage: React.FC = () => {
     fetchNotices();
   }, []);
 
+  // তালিকা Worker দিয়ে R2-তে সংরক্ষণ (নতুনটি উপরে)
+  const persist = async (list: Notice[]) => {
+    await putPublicJson('exams', list);
+    setNotices(list);
+    setCached('exams_home', list.slice(0, 4));
+    invalidateCache('exams_');
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDate('');
+    setContent('');
+    setCategory('Exam Date');
+    setImageFile(null);
+    setImagePreview('');
+  };
+
+  const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview('');
+    }
+  };
+
   const handleCreateNotice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     setSaving(true);
     try {
-      const noticeData = {
+      const now = new Date().toISOString();
+      const id = `exam-${Date.now()}`;
+
+      // ছবি থাকলে ছোট করে R2-তে আপলোড, তারপর URL সহ নোটিশ সেভ
+      let imageUrl: string | undefined;
+      if (imageFile) {
+        const compressed = await compressImageToDataUrl(imageFile, 1200, 1200, 400 * 1024, 'image/jpeg');
+        const blob = await (await fetch(compressed.dataUrl)).blob();
+        imageUrl = await uploadPublicImage('exams', `${id}.jpg`, blob);
+      }
+
+      const newNotice: Notice = {
+        id,
         title: title.trim(),
-        date: date || new Date().toISOString().slice(0, 10),
+        date: date || now.slice(0, 10),
         category: category || 'Exam Date',
         content: content || '',
-      };
+        ...(imageUrl ? { imageUrl } : {}),
+        createdAt: now,
+        updatedAt: now,
+      } as Notice;
 
-      let savedOnServer = false;
-      let generatedId = `exam-${Date.now()}`;
+      const list = [newNotice, ...notices.filter((n) => n.id !== id)].slice(0, MAX_NOTICES);
+      await persist(list);
 
-      // 1. Try resilient server API route
-      try {
-        const res = await fetch('/api/admin/exams/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(noticeData),
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.success && resData.notice?.id) {
-            generatedId = resData.notice.id;
-            savedOnServer = true;
-          }
-        }
-      } catch (srvErr) {
-        console.warn('Server exams save route notice, falling back to Firestore SDK:', srvErr);
-      }
-
-      // 2. Dual fallback to Firestore SDK (works in static preview or if server route is unavailable)
-      try {
-        const examDocRef = doc(collection(db, 'exams'));
-        generatedId = examDocRef.id;
-        await setDoc(examDocRef, {
-          ...noticeData,
-          id: generatedId,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        savedOnServer = true;
-      } catch (fbErr) {
-        console.warn('Firestore direct exam save note:', fbErr);
-      }
-
-      // 3. Immediately update UI state and local cache
-      const newNotice: ExamNotice = {
-        id: generatedId,
-        ...noticeData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      setNotices((prev) => [newNotice, ...prev.filter((n) => n.id !== generatedId)]);
-      setCached('exams_home', [newNotice, ...notices].slice(0, 4));
-      invalidateCache('exams_');
-
-      success('পরীক্ষা নোটিশ সফলভাবে সংরক্ষিত ও প্রকাশিত হয়েছে!');
-      setTitle('');
-      setDate('');
-      setContent('');
+      success('পরীক্ষা নোটিশ সফলভাবে সংরক্ষিত ও প্রকাশিত হয়েছে!');
+      resetForm();
       setModalOpen(false);
-      fetchNotices();
     } catch (err: any) {
       console.error('Exam save error:', err);
-      error(err?.message || 'নোটিশ সংরক্ষণ করতে ব্যর্থ হয়েছে');
+      error(err?.message || 'নোটিশ সংরক্ষণ করতে ব্যর্থ হয়েছে');
     } finally {
       setSaving(false);
     }
@@ -123,16 +127,11 @@ export const AdminExamsPage: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm('আপনি কি নিশ্চিত যে নোটিশটি মুছতে চান?')) return;
     try {
-      await fetch(`/api/admin/exams/${id}`, { method: 'DELETE' }).catch(() => {});
-      try {
-        await deleteDoc(doc(db, 'exams', id));
-      } catch {}
-      invalidateCache('exams_');
-      setNotices((prev) => prev.filter((n) => n.id !== id));
-      success('নোটিশ মুছে ফেলা হয়েছে');
+      await persist(notices.filter((n) => n.id !== id));
+      success('নোটিশ মুছে ফেলা হয়েছে');
     } catch (err: any) {
       console.error('Exam delete error:', err);
-      error(err?.message || 'মুছতে ব্যর্থ হয়েছে');
+      error(err?.message || 'মুছতে ব্যর্থ হয়েছে');
     }
   };
 
@@ -156,7 +155,7 @@ export const AdminExamsPage: React.FC = () => {
         </div>
       ) : notices.length === 0 ? (
         <div className="p-8 text-center bg-white rounded-xl border border-gray-200 text-gray-500 text-xs">
-          কোনো নোটিশ নেই। "নতুন নোটিশ দিন" বাটনে চাপুন।
+          কোনো নোটিশ নেই। &quot;নতুন নোটিশ দিন&quot; বাটনে চাপুন।
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -171,6 +170,14 @@ export const AdminExamsPage: React.FC = () => {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+                {n.imageUrl && (
+                  <img
+                    src={n.imageUrl}
+                    alt={n.title}
+                    loading="lazy"
+                    className="w-full max-h-48 object-contain rounded-lg border border-gray-100 bg-gray-50 mb-2"
+                  />
+                )}
                 <h3 className="font-bold text-gray-900 text-sm mb-1">{n.title}</h3>
                 <p className="text-xs text-gray-600 line-clamp-3">{n.content}</p>
               </div>
@@ -184,9 +191,22 @@ export const AdminExamsPage: React.FC = () => {
       )}
 
       {/* Create Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="নতুন পরীক্ষা / রেজাল্ট নোটিশ">
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          resetForm();
+        }}
+        title="নতুন পরীক্ষা / রেজাল্ট নোটিশ"
+      >
         <form onSubmit={handleCreateNotice} className="space-y-4">
-          <Input label="নোটিশের শিরোনাম" placeholder="যেমন: ৪৬তম বিসিএস প্রিলিমিনারি পরীক্ষার তারিখ" value={title} onChange={(e) => setTitle(e.target.value)} requiredStar />
+          <Input
+            label="নোটিশের শিরোনাম"
+            placeholder="যেমন: ৪৬তম বিসিএস প্রিলিমিনারি পরীক্ষার তারিখ"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            requiredStar
+          />
           <div className="grid grid-cols-2 gap-3">
             <Input label="তারিখ" type="date" value={date} onChange={(e) => setDate(e.target.value)} requiredStar />
             <Select
@@ -211,8 +231,44 @@ export const AdminExamsPage: React.FC = () => {
               className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-emerald-600"
             />
           </div>
+
+          {/* ছবি যোগ (ঐচ্ছিক) */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">ছবি যোগ করুন (ঐচ্ছিক)</label>
+            {imagePreview ? (
+              <div className="relative inline-block">
+                <img src={imagePreview} alt="Preview" className="max-h-40 rounded-lg border border-gray-200" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageFile(null);
+                    setImagePreview('');
+                  }}
+                  className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-md"
+                  title="ছবি সরান"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-lg cursor-pointer text-xs text-gray-600">
+                <ImageIcon className="w-4 h-4" />
+                <span>ছবি নির্বাচন করুন (JPG, PNG, WebP)</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImagePick} className="hidden" />
+              </label>
+            )}
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setModalOpen(false);
+                resetForm();
+              }}
+            >
               বাতিল
             </Button>
             <Button type="submit" size="sm" loading={saving}>
