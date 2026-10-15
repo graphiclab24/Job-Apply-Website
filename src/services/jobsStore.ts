@@ -2,6 +2,8 @@ export const R2_BASE = 'https://files.bdjobapply.site';
 export const WORKER_URL = 'https://bdjob-worker.masterboom2040.workers.dev';
 const TOKEN_KEY = 'admin_worker_token';
 
+const isPublished = (j: any) => j && j.status !== 'draft';
+
 /**
  * জবের তালিকা পড়া।
  * fresh = false (পাবলিক): R2 → same-origin /jobs.json, ড্রাফট বাদ
@@ -18,7 +20,7 @@ export async function fetchJobsList(fresh = false): Promise<any[]> {
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) {
-        return fresh ? data : data.filter((j: any) => j && j.status !== 'draft');
+        return fresh ? data : data.filter(isPublished);
       }
     } catch {
       // পরের source-এ যাও
@@ -40,24 +42,8 @@ export function getAdminToken(): string {
 
 const toTime = (v: any) => new Date(v || 0).getTime() || 0;
 
-/**
- * একটি জব যোগ/আপডেট করে পুরো তালিকা Worker-এ পাঠায়।
- * সম্পাদনার সময় পুরনো createdAt বজায় থাকে।
- */
-export async function saveJobToWorker(job: Record<string, any>): Promise<void> {
-  const current = await fetchJobsList(true);
-  const existing = current.find((j) => j.id === job.id);
-
-  const merged = {
-    ...(existing || {}),
-    ...job,
-    createdAt: existing?.createdAt || job.createdAt,
-  };
-
-  const all = [merged, ...current.filter((j) => j.id !== job.id)].sort(
-    (a, b) => toTime(b.publishedAt) - toTime(a.publishedAt)
-  );
-
+/** পুরো জবের তালিকা Worker-এ পাঠায় (R2 jobs.json ও feed.json আপডেট হয়) */
+async function postAllJobs(all: any[]): Promise<void> {
   const token = getAdminToken();
   const res = await fetch(`${WORKER_URL}/admin/jobs/save`, {
     method: 'POST',
@@ -75,4 +61,32 @@ export async function saveJobToWorker(job: Record<string, any>): Promise<void> {
   if (!res.ok) {
     throw new Error(`সেভ ব্যর্থ (HTTP ${res.status})`);
   }
+}
+
+/**
+ * একটি জব যোগ/আপডেট করে সেভ করে।
+ * সম্পাদনার সময় পুরনো createdAt বজায় থাকে।
+ */
+export async function saveJobToWorker(job: Record<string, any>): Promise<void> {
+  const current = await fetchJobsList(true);
+  const existing = current.find((j) => j.id === job.id);
+
+  const merged = {
+    ...(existing || {}),
+    ...job,
+    createdAt: existing?.createdAt || job.createdAt,
+  };
+
+  const all = [merged, ...current.filter((j) => j.id !== job.id)].sort(
+    (a, b) => toTime(b.publishedAt) - toTime(a.publishedAt)
+  );
+
+  await postAllJobs(all);
+}
+
+/** একটি জব মুছে বাকি তালিকা Worker-এ পাঠায় */
+export async function deleteJobInWorker(id: string): Promise<void> {
+  const current = await fetchJobsList(true);
+  const remaining = current.filter((j) => j.id !== id);
+  await postAllJobs(remaining);
 }
