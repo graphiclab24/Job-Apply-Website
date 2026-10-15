@@ -1,4 +1,4 @@
-export const R2_BASE = 'https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev';
+export const R2_BASE = 'https://files.bdjobapply.site';
 export const WORKER_URL = 'https://bdjob-worker.masterboom2040.workers.dev';
 const TOKEN_KEY = 'admin_worker_token';
 
