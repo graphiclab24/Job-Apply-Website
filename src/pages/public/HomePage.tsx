@@ -8,8 +8,14 @@ import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { safeFormatBnDate, isJobExpired, getDeadlineDiffMs } from '../../utils/dateUtils';
 import { ExamNotice } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
+import { Modal } from '../../components/common/Modal';
 import { HomeUrgentDeadlines } from '../../components/home/HomeUrgentDeadlines';
 import { ArrowRight, Calendar, Sparkles, Award } from 'lucide-react';
+
+// R2-তে সংরক্ষিত নোটিশ (ছবির URL সহ হতে পারে)
+type ExamItem = ExamNotice & { imageUrl?: string };
+
+const R2_BASE = 'https://files.bdjobapply.site';
 
 export const HomePage: React.FC = () => {
   const [jobs, setJobs] = useState<FeedJobSummary[]>(() => {
@@ -20,16 +26,17 @@ export const HomePage: React.FC = () => {
     }
     return DEFAULT_FEED_JOBS.filter((j) => !isDummyJob(j));
   });
-  const [examNotices, setExamNotices] = useState<ExamNotice[]>(() => {
-    return getCached<ExamNotice[]>('exams_home') || [];
+  const [examNotices, setExamNotices] = useState<ExamItem[]>(() => {
+    return getCached<ExamItem[]>('exams_home') || [];
   });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [loading, setLoading] = useState(false);
+  const [activeExam, setActiveExam] = useState<ExamItem | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Fetch Feed Jobs with ultra-fast SWR (Edge API / RAM Cache ~2ms)
+    // 1. Fetch Feed Jobs with ultra-fast SWR (RAM / R2 cache)
     getFeedLatest(true)
       .then((feedPosts) => {
         if (isMounted) {
@@ -51,32 +58,16 @@ export const HomePage: React.FC = () => {
         if (isMounted) setLoading(false);
       });
 
-    // 2. Fetch Exams non-blockingly from Edge Server API & Cloudflare R2 (0 Firestore reads)
-    const cachedExams = getCached<ExamNotice[]>('exams_home');
-    if (!cachedExams || cachedExams.length === 0) {
-      fetch('/api/exams')
-        .then((res) => (res.ok ? res.json() : Promise.reject()))
-        .then((data) => {
-          const list = Array.isArray(data?.exams) ? data.exams.slice(0, 4) : [];
-          if (list.length > 0) {
-            setCached('exams_home', list);
-            if (isMounted) setExamNotices(list);
-          }
-        })
-        .catch(() => {
-          // Cloudflare R2 fallback
-          fetch('https://files.bdjobapply.site/exams.json')
-            .then((res) => (res.ok ? res.json() : []))
-            .then((r2List) => {
-              if (Array.isArray(r2List) && r2List.length > 0) {
-                const list = r2List.slice(0, 4);
-                setCached('exams_home', list);
-                if (isMounted) setExamNotices(list);
-              }
-            })
-            .catch(() => {});
-        });
-    }
+    // 2. Exams: সরাসরি R2 থেকে (live সাইটে /api নেই)। ক্যাশ থাকলেও নতুন তথ্য আনা হয়।
+    fetch(`${R2_BASE}/exams.json?t=${Date.now()}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => {
+        if (!Array.isArray(list)) return;
+        const top = list.slice(0, 4);
+        setCached('exams_home', top);
+        if (isMounted) setExamNotices(top);
+      })
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -174,7 +165,7 @@ export const HomePage: React.FC = () => {
           </h1>
 
           <p className="text-xs sm:text-sm text-emerald-100/90 max-w-2xl mx-auto leading-relaxed">
-            একবার সিভি পূরণ করুন, যেকোনো সার্কুলারে দ্রুত আবেদন করুন। আপনার হয়ে নির্ভুলভাবে Teletalk পোর্টালে ফর্ম জমা দিয়ে সফট কপি ও পেইড কপি প্রদান করা হয়।
+            একবার সিভি পূরণ করুন, যেকোনো সার্কুলারে দ্রুত আবেদন করুন। আপনার হয়ে নির্ভুলভাবে Teletalk পোর্টালে ফর্ম জমা দিয়ে সফট কপি ও পেইড কপি প্রদান করা হয়।
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -205,7 +196,7 @@ export const HomePage: React.FC = () => {
       <section className="max-w-6xl mx-auto px-4 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">সাম্প্রতিক নিয়োগ বিজ্ঞপ্তি</h2>
+            <h2 className="text-xl font-bold text-gray-900">সাম্প্রতিক নিয়োগ বিজ্ঞপ্তি</h2>
             <p className="text-xs text-gray-500">অনলাইন আবেদন সুবিধাসহ সর্বশেষ প্রকাশিত পোস্ট (সর্বোচ্চ ৩০টি ফিড)</p>
           </div>
 
@@ -238,7 +229,7 @@ export const HomePage: React.FC = () => {
           </div>
         ) : filteredJobs.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-xl border border-gray-200 text-gray-500 text-xs">
-            এই ক্যাটাগরিতে কোনো সক্রিয় বিজ্ঞপ্তি পাওয়া যায়নি।
+            এই ক্যাটাগরিতে কোনো সক্রিয় বিজ্ঞপ্তি পাওয়া যায়নি।
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -262,7 +253,7 @@ export const HomePage: React.FC = () => {
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
                         {job.category === 'govt' ? 'সরকারি' : 'বেসরকারি/অন্যান্য'}
                       </span>
                       {isExpired ? (
@@ -285,9 +276,7 @@ export const HomePage: React.FC = () => {
                   <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                      <span>
-                        শেষ: {safeFormatBnDate(job.deadline)}
-                      </span>
+                      <span>শেষ: {safeFormatBnDate(job.deadline)}</span>
                     </div>
                     <span className="font-semibold text-emerald-700">বিস্তারিত →</span>
                   </div>
@@ -316,19 +305,53 @@ export const HomePage: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {examNotices.map((ex) => (
-                <div key={ex.id} className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col justify-between">
+                <button
+                  key={ex.id}
+                  type="button"
+                  onClick={() => setActiveExam(ex)}
+                  className="text-left p-4 bg-gray-50 hover:bg-emerald-50 rounded-xl border border-gray-200 hover:border-emerald-400 flex flex-col justify-between transition-colors cursor-pointer"
+                >
                   <div>
-                    <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded">{ex.category}</span>
+                    <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded">
+                      {ex.category}
+                    </span>
                     <h4 className="font-bold text-gray-900 text-sm mt-1">{ex.title}</h4>
                     <p className="text-xs text-gray-600 mt-1 line-clamp-2">{ex.content}</p>
                   </div>
-                  <span className="text-[11px] text-gray-400 mt-3 block">তারিখ: {ex.date}</span>
-                </div>
+                  <span className="text-[11px] text-gray-400 mt-3 block">
+                    তারিখ: {ex.date} • বিস্তারিত দেখুন →
+                  </span>
+                </button>
               ))}
             </div>
           </div>
         </section>
       )}
+
+      {/* Exam notice details modal */}
+      <Modal isOpen={!!activeExam} onClose={() => setActiveExam(null)} title={activeExam?.title || 'নোটিশ'}>
+        {activeExam && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded">
+                {activeExam.category}
+              </span>
+              <span className="text-[11px] text-gray-500">তারিখ: {activeExam.date}</span>
+            </div>
+            {activeExam.imageUrl && (
+              <img
+                src={activeExam.imageUrl}
+                alt={activeExam.title}
+                loading="lazy"
+                className="w-full max-h-[70vh] object-contain rounded-lg border border-gray-100 bg-gray-50"
+              />
+            )}
+            {activeExam.content && (
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{activeExam.content}</p>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
