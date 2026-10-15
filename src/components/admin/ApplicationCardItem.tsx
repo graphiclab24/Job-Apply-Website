@@ -104,7 +104,7 @@ export const ApplicationCardItem: React.FC<Props> = ({
         <div>
           <span className="text-gray-400 block mb-0.5">পেমেন্ট বিবরণ:</span>
           <span className="font-semibold text-gray-800 block break-all">
-            ৳{app.fee?.total} ({app.payment?.method}) • Trx: {app.payment?.trxId}
+            ৳{app.fee?.total} ({app.payment?.method})
           </span>
           {app.payment?.senderNumber && (
             <span className="text-[10px] text-gray-500 block break-words">প্রেরক: {app.payment.senderNumber}</span>
