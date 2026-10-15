@@ -65,7 +65,7 @@ export const HomePage: React.FC = () => {
         })
         .catch(() => {
           // Cloudflare R2 fallback
-          fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/exams.json')
+          fetch('https://files.bdjobapply.site/exams.json')
             .then((res) => (res.ok ? res.json() : []))
             .then((r2List) => {
               if (Array.isArray(r2List) && r2List.length > 0) {
