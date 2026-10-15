@@ -45,7 +45,7 @@ export const SitemapView: React.FC = () => {
           }
         } catch {
           try {
-            const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+            const r2Res = await fetch('https://files.bdjobapply.site/jobs.json');
             if (r2Res.ok) {
               const r2Data = await r2Res.json();
               if (Array.isArray(r2Data)) jobsList = r2Data;
