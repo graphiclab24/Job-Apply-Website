@@ -29,10 +29,13 @@ import {
   Check,
 } from 'lucide-react';
 
+// ড্যাশবোর্ড সংখ্যা ৩০ মিনিট পর্যন্ত একই থাকবে (Firestore read বাঁচাতে)
+const DASHBOARD_CACHE_TTL_MS = 30 * 60 * 1000;
+
 export const AdminDashboardPage: React.FC = () => {
   const [counts, setCounts] = useState(() => {
     return (
-      getCached<any>('admin_dashboard_counts') || {
+      getCached<any>('admin_dashboard_counts', DASHBOARD_CACHE_TTL_MS) || {
         waiting: 0,
         applyNow: 0,
         checking: 0,
@@ -44,9 +47,9 @@ export const AdminDashboardPage: React.FC = () => {
     );
   });
   const [urgentApps, setUrgentApps] = useState<JobApplication[]>(() => {
-    return getCached<JobApplication[]>('admin_dashboard_urgent') || [];
+    return getCached<JobApplication[]>('admin_dashboard_urgent', DASHBOARD_CACHE_TTL_MS) || [];
   });
-  const [loading, setLoading] = useState(() => !getCached('admin_dashboard_counts'));
+  const [loading, setLoading] = useState(() => !getCached('admin_dashboard_counts', DASHBOARD_CACHE_TTL_MS));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
@@ -115,6 +118,12 @@ export const AdminDashboardPage: React.FC = () => {
   };
 
   useEffect(() => {
+    // ক্যাশ ৩০ মিনিট পর্যন্ত বৈধ থাকলে নতুন করে Firestore পড়বে না
+    const fresh = getCached<any>('admin_dashboard_counts', DASHBOARD_CACHE_TTL_MS);
+    if (fresh) {
+      setLoading(false);
+      return;
+    }
     fetchAdminStats();
   }, []);
 
