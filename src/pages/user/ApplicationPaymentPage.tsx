@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, serverTimestamp, collection, setDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, collection, setDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import {
   saveFile,
@@ -17,6 +17,7 @@ import { useToast } from '../../components/common/Toast';
 import { invalidateCache } from '../../services/cache';
 import { isValidMobile } from '../../utils/auth';
 import { submitJobApplication } from '../../services/applicationsService';
+import { R2_BASE } from '../../services/jobsStore';
 import { Copy, Check, AlertCircle, ArrowRight } from 'lucide-react';
 
 export const ApplicationPaymentPage: React.FC = () => {
@@ -45,12 +46,16 @@ export const ApplicationPaymentPage: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const snap = await getDoc(doc(db, 'settings', 'payment'));
-        if (snap.exists()) {
-          setPaymentSettings(snap.data() as PaymentSettings);
+        // R2 থেকে পেমেন্ট নম্বর (Firestore লাগে না)। ফাইল না থাকলে ডিফল্ট মান ব্যবহার হবে।
+        const res = await fetch(`${R2_BASE}/settings-payment.json`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.bkashNumber) {
+            setPaymentSettings(data as PaymentSettings);
+          }
         }
-      } catch (e) {
-        // Fallback silently
+      } catch {
+        // ডিফল্ট মান ব্যবহার হবে
       }
     };
     fetchSettings();
