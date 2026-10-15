@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, runTransaction, serverTimestamp, collection, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, collection, setDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import {
   saveFile,
@@ -35,7 +35,6 @@ export const ApplicationPaymentPage: React.FC = () => {
   });
 
   const [method, setMethod] = useState<PaymentMethod>('bkash');
-  const [trxId, setTrxId] = useState('');
   const [senderNumber, setSenderNumber] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotUploading, setScreenshotUploading] = useState(false);
@@ -60,7 +59,7 @@ export const ApplicationPaymentPage: React.FC = () => {
   if (!state || !state.appId || !state.jobId) {
     return (
       <div className="max-w-md mx-auto p-6 bg-white rounded-xl border border-gray-200 text-center space-y-3">
-        <p className="text-sm font-semibold text-gray-800">কোনো সক্রিয় আবেদন পাওয়া যায়নি।</p>
+        <p className="text-sm font-semibold text-gray-800">কোনো সক্রিয় আবেদন পাওয়া যায়নি।</p>
         <Link to="/jobs">
           <Button size="sm">চাকরি খুঁজুন</Button>
         </Link>
@@ -78,13 +77,7 @@ export const ApplicationPaymentPage: React.FC = () => {
     e.preventDefault();
     setLocalError('');
 
-    const cleanTrx = trxId.trim().toUpperCase();
     const cleanSender = senderNumber.trim();
-
-    if (!cleanTrx || cleanTrx.length < 5) {
-      setLocalError('সঠিক Transaction ID (TrxID) লিখুন');
-      return;
-    }
 
     if (!isValidMobile(cleanSender)) {
       setLocalError('১১ ডিজিটের প্রেরকের মোবাইল নম্বর দিন');
@@ -122,7 +115,7 @@ export const ApplicationPaymentPage: React.FC = () => {
         setScreenshotUploading(false);
       }
 
-      // 1. Submit to Server, Cloudflare R2 and Google Sheets (Zero Firestore quota dependency)
+      // 1. Submit to Server, Cloudflare R2 and Google Sheets
       const submitPayload = {
         id: state.appId,
         uid: user.uid,
@@ -140,7 +133,6 @@ export const ApplicationPaymentPage: React.FC = () => {
         payment: {
           method: method as any,
           senderNumber: cleanSender,
-          trxId: cleanTrx,
           amount: state.fee.total,
           submittedAt: new Date().toISOString(),
         },
@@ -149,46 +141,28 @@ export const ApplicationPaymentPage: React.FC = () => {
 
       await submitJobApplication(submitPayload);
 
-      // 2. Non-blocking Firestore transaction backup
+      // 2. আবেদন Firestore-এ সেভ (Transaction ID নেই)
       try {
-        const trxDocRef = doc(db, 'trxIds', cleanTrx);
         const appDocRef = doc(db, 'applications', state.appId);
 
-        await runTransaction(db, async (transaction) => {
-          const trxSnap = await transaction.get(trxDocRef);
-          if (trxSnap.exists()) {
-            throw new Error('এই Transaction ID আগেই ব্যবহার হয়েছে!');
-          }
-
-          transaction.set(trxDocRef, {
-            appId: state.appId,
-            uid: user.uid,
-            createdAt: serverTimestamp(),
-          });
-
-          transaction.set(appDocRef, {
-            ...submitPayload,
-            termsAccepted: true,
-            status: 'waiting',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+        await setDoc(appDocRef, {
+          ...submitPayload,
+          termsAccepted: true,
+          status: 'waiting',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
 
         const notifId = doc(collection(db, 'notifications')).id;
         await setDoc(doc(db, 'notifications', notifId), {
           uid: user.uid,
-          title: 'আবেদন সফলভাবে সাবমিট হয়েছে',
-          body: `আপনার আবেদন (${state.appId}) প্রাপ্ত হয়েছে। পেমেন্ট যাচাই শেষে অপারেটর Teletalk-এ আবেদন সম্পন্ন করবেন।`,
+          title: 'আবেদন সফলভাবে সাবমিট হয়েছে',
+          body: `আপনার আবেদন (${state.appId}) প্রাপ্ত হয়েছে। পেমেন্ট যাচাই শেষে অপারেটর Teletalk-এ আবেদন সম্পন্ন করবেন।`,
           appId: state.appId,
           read: false,
           createdAt: serverTimestamp(),
         }).catch(() => {});
       } catch (fbErr: any) {
-        if (fbErr?.message?.includes('এই Transaction ID আগেই ব্যবহার হয়েছে')) {
-          setLocalError(fbErr.message);
-          return;
-        }
         console.warn('Background Firestore sync notice:', fbErr?.message || fbErr);
       }
 
@@ -198,12 +172,10 @@ export const ApplicationPaymentPage: React.FC = () => {
       navigate('/applications/waiting', { replace: true });
     } catch (err: any) {
       console.error('Payment submit error:', err);
-      if (err.message && err.message.includes('Transaction ID আগেই ব্যবহার হয়েছে')) {
-        setLocalError(err.message);
-      } else if (err.message && err.message.toLowerCase().includes('permission')) {
-        setLocalError('অনুমোদন যাচাই ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন বা পুনরায় লগইন করুন।');
+      if (err.message && err.message.toLowerCase().includes('permission')) {
+        setLocalError('অনুমোদন যাচাই ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন বা পুনরায় লগইন করুন।');
       } else {
-        setLocalError(err?.message || 'পেমেন্ট সাবমিট করতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
+        setLocalError(err?.message || 'পেমেন্ট সাবমিট করতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
       }
     } finally {
       setSubmitting(false);
@@ -286,7 +258,7 @@ export const ApplicationPaymentPage: React.FC = () => {
                 className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs"
               >
                 {copiedText === 'phone' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedText === 'phone' ? 'কপি হয়েছে' : 'নম্বর কপি'}</span>
+                <span>{copiedText === 'phone' ? 'কপি হয়েছে' : 'নম্বর কপি'}</span>
               </button>
             )}
           </div>
@@ -305,16 +277,7 @@ export const ApplicationPaymentPage: React.FC = () => {
 
         <form onSubmit={handleSubmitPayment} className="space-y-4 pt-2 border-t border-gray-100">
           <Input
-            label="Transaction ID (TrxID)"
-            placeholder="যেমন: BKL9X8Z12A"
-            value={trxId}
-            onChange={(e) => setTrxId(e.target.value.toUpperCase())}
-            helperText="টাকা পাঠানোর পর প্রাপ্ত ট্রানজেকশন আইডি দিন"
-            requiredStar
-          />
-
-          <Input
-            label="যে নম্বর থেকে টাকা পাঠিয়েছেন (Sender Mobile No)"
+            label="যে নম্বর থেকে টাকা পাঠিয়েছেন (Sender Mobile No)"
             placeholder="017XXXXXXXX"
             value={senderNumber}
             onChange={(e) => setSenderNumber(e.target.value.replace(/\D/g, ''))}
