@@ -111,3 +111,26 @@ export async function putPublicJson(name: string, data: unknown): Promise<void> 
     throw new Error(`সংরক্ষণ ব্যর্থ (HTTP ${res.status})`);
   }
 }
+
+/** পাবলিক ছবি Worker দিয়ে R2-তে আপলোড; পাবলিক URL ফেরত দেয় */
+export async function uploadPublicImage(folder: string, fileName: string, blob: Blob): Promise<string> {
+  const token = getAdminToken();
+  const res = await fetch(`${WORKER_URL}/admin/upload/${folder}/${fileName}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': blob.type,
+    },
+    body: blob,
+  });
+
+  if (res.status === 401) {
+    sessionStorage.removeItem(TOKEN_KEY);
+    throw new Error('অ্যাডমিন টোকেন ভুল');
+  }
+  if (!res.ok) {
+    throw new Error(`ছবি আপলোড ব্যর্থ (HTTP ${res.status})`);
+  }
+  const data = await res.json();
+  return data.url as string;
+}
