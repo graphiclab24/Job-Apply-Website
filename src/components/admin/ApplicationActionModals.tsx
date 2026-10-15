@@ -13,6 +13,8 @@ import {
   isValidDriveUrl,
   FILE_LIMITS,
 } from '../../services/files';
+import { loadLocalMedia } from '../../services/localMedia';
+import { LocalFolderPicker } from './LocalFolderPicker';
 import {
   CheckCircle2,
   AlertCircle,
@@ -138,7 +140,7 @@ export const UploadSoftCopyModal: React.FC<UploadSoftCopyModalProps> = ({
         await onUpload({ hasFile: false, driveUrl: driveUrl.trim() });
         onClose();
       } catch (err: any) {
-        setErrorMsg(err.message || 'সেভ করতে সমস্যা হয়েছে');
+        setErrorMsg(err.message || 'সেভ করতে সমস্যা হয়েছে');
       } finally {
         setLoading(false);
       }
@@ -166,7 +168,7 @@ export const UploadSoftCopyModal: React.FC<UploadSoftCopyModalProps> = ({
       await onUpload({ hasFile: true });
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'সফট কপি সংরক্ষণ ব্যর্থ হয়েছে');
+      setErrorMsg(err.message || 'সফট কপি সংরক্ষণ ব্যর্থ হয়েছে');
     } finally {
       setLoading(false);
     }
@@ -233,7 +235,7 @@ export const UploadSoftCopyModal: React.FC<UploadSoftCopyModalProps> = ({
                 placeholder="https://drive.google.com/file/d/.../view"
                 value={driveUrl}
                 onChange={(e) => setDriveUrl(e.target.value)}
-                helperText="Google Drive শেয়ারেবল লিংক"
+                helperText="Google Drive শেয়ারেবল লিংক"
               />
             )}
           </div>
@@ -307,7 +309,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
       }
       setLoading(true);
       try {
-        // Delete temporary soft copy file
+        // অস্থায়ী সফট কপি মুছে ফেলা
         try {
           await deleteFile(getFileId.softcopy(app.id));
         } catch (e) {
@@ -317,7 +319,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
         await onUploadPaid({ hasFile: false, driveUrl: driveUrl.trim() });
         onClose();
       } catch (err: any) {
-        setErrorMsg(err.message || 'সেভ করতে সমস্যা হয়েছে');
+        setErrorMsg(err.message || 'সেভ করতে সমস্যা হয়েছে');
       } finally {
         setLoading(false);
       }
@@ -333,7 +335,6 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
     try {
       const readResult = await readPdfAsDataUrl(file);
 
-      // Save paid copy to files/{appId}_paid
       await saveFile({
         id: getFileId.paidcopy(app.id),
         ownerUid: app.uid,
@@ -344,7 +345,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
         data: readResult.dataUrl,
       });
 
-      // Strict rule: paid কপি সেভ হলে {appId}_soft ডকুমেন্ট মুছবে
+      // পেইড কপি সেভ হলে অস্থায়ী সফট কপি মুছবে
       try {
         await deleteFile(getFileId.softcopy(app.id));
       } catch (e) {
@@ -354,7 +355,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
       await onUploadPaid({ hasFile: true });
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'পেইড কপি সংরক্ষণ করতে সমস্যা হয়েছে');
+      setErrorMsg(err.message || 'পেইড কপি সংরক্ষণ করতে সমস্যা হয়েছে');
     } finally {
       setLoading(false);
     }
@@ -365,7 +366,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-900 space-y-1">
           <span className="font-bold block">টেলিটক ফি পরিশোধ নিশ্চিত করুন:</span>
-          <span>সরকারি ফি পরিশোধের পর প্রাপ্ত অফিসিয়াল পেইড কপি PDF (≤650 KB) আপলোড করুন অথবা গুগল ড্রাইভ লিংক দিন। পেইড কপি সেভ হওয়ার পর আগের অস্থায়ী সফট কপি ডকুমেন্ট স্বয়ংক্রিয়ভাবে মুছে যাবে।</span>
+          <span>সরকারি ফি পরিশোধের পর প্রাপ্ত অফিসিয়াল পেইড কপি PDF (≤650 KB) আপলোড করুন অথবা গুগল ড্রাইভ লিংক দিন। পেইড কপি সেভ হওয়ার পর আগের অস্থায়ী সফট কপি ডকুমেন্ট স্বয়ংক্রিয়ভাবে মুছে যাবে।</span>
         </div>
 
         {errorMsg && (
@@ -422,7 +423,7 @@ export const CompletePaidModal: React.FC<CompletePaidModalProps> = ({
                 placeholder="https://drive.google.com/file/d/.../view"
                 value={driveUrl}
                 onChange={(e) => setDriveUrl(e.target.value)}
-                helperText="Google Drive শেয়ারেবল লিংক"
+                helperText="Google Drive শেয়ারেবল লিংক"
               />
             )}
           </div>
@@ -460,6 +461,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
   const [photoData, setPhotoData] = useState<string>('');
   const [sigData, setSigData] = useState<string>('');
   const [loadingMedia, setLoadingMedia] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!isOpen || !app || !profile) return;
@@ -467,22 +469,23 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
     const loadFiles = async () => {
       setLoadingMedia(true);
       try {
-        const photoDoc = await getFile(getFileId.photo(app.uid));
-        if (photoDoc?.data) {
-          setPhotoData(photoDoc.data);
-        } else if (profile.photoUrl) {
-          setPhotoData(profile.photoUrl);
-        } else if (profile.data?.photoDataUrl) {
-          setPhotoData(profile.data.photoDataUrl);
-        }
+        // 1. প্রার্থীর মোবাইল নম্বরের ফোল্ডার থেকে
+        const local = await loadLocalMedia(app.smsNumber || app.mobile || '');
+        if (local.photo) setPhotoData(local.photo);
+        if (local.signature) setSigData(local.signature);
 
-        const sigDoc = await getFile(getFileId.signature(app.uid));
-        if (sigDoc?.data) {
-          setSigData(sigDoc.data);
-        } else if (profile.signatureUrl) {
-          setSigData(profile.signatureUrl);
-        } else if (profile.data?.signatureDataUrl) {
-          setSigData(profile.data.signatureDataUrl);
+        // 2. ফোল্ডারে না থাকলে আগের উৎস
+        if (!local.photo) {
+          const photoDoc = await getFile(getFileId.photo(app.uid));
+          if (photoDoc?.data) setPhotoData(photoDoc.data);
+          else if (profile.photoUrl) setPhotoData(profile.photoUrl);
+          else if (profile.data?.photoDataUrl) setPhotoData(profile.data.photoDataUrl);
+        }
+        if (!local.signature) {
+          const sigDoc = await getFile(getFileId.signature(app.uid));
+          if (sigDoc?.data) setSigData(sigDoc.data);
+          else if (profile.signatureUrl) setSigData(profile.signatureUrl);
+          else if (profile.data?.signatureDataUrl) setSigData(profile.data.signatureDataUrl);
         }
       } catch (e) {
         // Fallback
@@ -491,7 +494,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
       }
     };
     loadFiles();
-  }, [isOpen, app, profile]);
+  }, [isOpen, app, profile, reloadKey]);
 
   const [extensionAck, setExtensionAck] = useState<string | null>(null);
 
@@ -577,7 +580,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
         {app.applyLink ? (
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs">
             <div className="min-w-0">
-              <span className="font-bold text-emerald-900 block mb-0.5">অফিসিয়াল Teletalk আবেদন লিংক:</span>
+              <span className="font-bold text-emerald-900 block mb-0.5">অফিসিয়াল Teletalk আবেদন লিংক:</span>
               <a
                 href={app.applyLink}
                 target="_blank"
@@ -599,7 +602,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
           </div>
         ) : (
           <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs">
-            ⚠️ এই সার্কুলারে টেলিটক আবেদন লিংক যুক্ত নেই। সার্কুলার সম্পাদনায় গিয়ে লিংক যুক্ত করতে পারেন।
+            ⚠️ এই সার্কুলারে টেলিটক আবেদন লিংক যুক্ত নেই। সার্কুলার সম্পাদনায় গিয়ে লিংক যুক্ত করতে পারেন।
           </div>
         )}
 
@@ -614,7 +617,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
           <div><span className="text-gray-400">উপজেলা:</span> <strong>{profile.data?.permanentUpazila}</strong></div>
         </div>
 
-        {/* Loaded Photo & Signature preview using getFile */}
+        {/* Loaded Photo & Signature preview */}
         <div className="p-3 bg-white rounded-lg border border-gray-200 flex items-center justify-around gap-4">
           <div className="text-center">
             <span className="text-[10px] text-gray-500 block mb-1">প্রার্থীর ছবি (৩০০×৩০০)</span>
@@ -623,7 +626,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
             ) : photoData ? (
               <img src={photoData} alt="Photo" className="w-16 h-16 object-cover rounded border border-gray-300 mx-auto" />
             ) : (
-              <span className="text-[10px] text-gray-400">ছবি পাওয়া যায়নি</span>
+              <span className="text-[10px] text-gray-400">ছবি পাওয়া যায়নি</span>
             )}
           </div>
 
@@ -634,7 +637,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
             ) : sigData ? (
               <img src={sigData} alt="Signature" className="h-10 w-24 object-contain rounded border border-gray-300 mx-auto bg-white" />
             ) : (
-              <span className="text-[10px] text-gray-400">স্বাক্ষর পাওয়া যায়নি</span>
+              <span className="text-[10px] text-gray-400">স্বাক্ষর পাওয়া যায়নি</span>
             )}
           </div>
         </div>
@@ -643,14 +646,14 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
         <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/40 border border-emerald-200 rounded-xl space-y-2 text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="font-bold text-emerald-900 flex items-center gap-1.5">
-              <span>⏱️ এক্সটেনশনে ডাটা মনে রাখার সময়সীমা:</span>
+              <span>⏱️ এক্সটেনশনে ডাটা মনে রাখার সময়সীমা:</span>
             </span>
             <select
               value={sessionMinutes}
               onChange={(e) => setSessionMinutes(Number(e.target.value))}
               className="bg-white border border-emerald-300 rounded-lg px-2.5 py-1 text-xs text-emerald-900 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-xs"
             >
-              <option value={30}>৩০ মিনিট (অস্থায়ী সেশন)</option>
+              <option value={30}>৩০ মিনিট (অস্থায়ী সেশন)</option>
               <option value={60}>১ ঘণ্টা (স্ট্যান্ডার্ড)</option>
               <option value={120}>২ ঘণ্টা</option>
               <option value={360}>৬ ঘণ্টা</option>
@@ -658,16 +661,19 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
             </select>
           </div>
           <p className="text-[11px] text-emerald-700 leading-relaxed">
-            💡 <strong>কোনো প্রোফাইল সেভ হবে না:</strong> প্রার্থীর তথ্য এক্সটেনশনের অস্থায়ী সেশনে সংরক্ষিত থাকবে। টেলিটক পোর্টালে গিয়ে উপরে ফ্লোটিং বারে <strong>"এক ক্লিকে ফর্ম পূরণ করুন"</strong> চাপলেই সব পূরণ হবে এবং ছবির পেজে ছবি-স্বাক্ষর নিজে থেকেই অ্যাটাচ হয়ে যাবে!
+            💡 <strong>কোনো প্রোফাইল সেভ হবে না:</strong> প্রার্থীর তথ্য এক্সটেনশনের অস্থায়ী সেশনে সংরক্ষিত থাকবে। টেলিটক পোর্টালে গিয়ে উপরে ফ্লোটিং বারে <strong>"এক ক্লিকে ফর্ম পূরণ করুন"</strong> চাপলেই সব পূরণ হবে এবং ছবির পেজে ছবি-স্বাক্ষর নিজে থেকেই অ্যাটাচ হয়ে যাবে!
           </p>
         </div>
 
         {extensionAck && (
           <div className="p-2.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>এক্সটেনশনে [{extensionAck}] এর তথ্য সফলভাবে সক্রিয় হয়েছে! Teletalk পেজে গিয়ে ফ্লোটিং বার থেকে এক ক্লিকে পূরণ করতে পারবেন।</span>
+            <span>এক্সটেনশনে [{extensionAck}] এর তথ্য সফলভাবে সক্রিয় হয়েছে! Teletalk পেজে গিয়ে ফ্লোটিং বার থেকে এক ক্লিকে পূরণ করতে পারবেন।</span>
           </div>
         )}
+
+        {/* ফোল্ডার থেকে ছবি-স্বাক্ষর (ডেস্কটপ Chrome/Edge) */}
+        <LocalFolderPicker onChanged={() => setReloadKey((k) => k + 1)} />
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
           <div className="flex flex-wrap items-center gap-2">
@@ -688,7 +694,7 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
               onClick={() => handleSendAutofill(false)}
               icon={posted ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
             >
-              {posted ? 'অস্থায়ী সেশনে সক্রিয় ✓' : 'Autofill-এ পাঠান'}
+              {posted ? 'অস্থায়ী সেশনে সক্রিয় ✓' : 'Autofill-এ পাঠান'}
             </Button>
           </div>
         </div>
@@ -699,14 +705,14 @@ export const AutofillModal: React.FC<AutofillModalProps> = ({
             Advanced / অপশনাল: JSON ডাটা দেখুন ও কপি করুন
           </summary>
           <div className="mt-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between gap-2">
-            <span className="text-[11px] text-gray-600">প্রয়োজনে ম্যানুয়াল টেস্ট বা ডিবাগিংয়ের জন্য JSON কপি করতে পারেন।</span>
+            <span className="text-[11px] text-gray-600">প্রয়োজনে ম্যানুয়াল টেস্ট বা ডিবাগিংয়ের জন্য JSON কপি করতে পারেন।</span>
             <Button
               size="sm"
               variant="outline"
               onClick={handleCopyJSON}
               icon={copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             >
-              {copied ? 'কপি হয়েছে' : 'JSON কপি'}
+              {copied ? 'কপি হয়েছে' : 'JSON কপি'}
             </Button>
           </div>
         </details>
