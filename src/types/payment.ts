@@ -2,7 +2,6 @@ export type PaymentMethod = 'bkash' | 'rocket' | 'nagad';
 
 export interface PaymentDetails {
   method: PaymentMethod;
-  trxId: string;
   senderNumber: string;
   hasScreenshot?: boolean;
   screenshotPath?: string;
@@ -10,11 +9,4 @@ export interface PaymentDetails {
   verified: boolean;
   verifiedAt?: any;
   verifiedBy?: string;
-}
-
-export interface TrxRecord {
-  trxId: string;
-  appId: string;
-  uid: string;
-  createdAt: any;
 }
