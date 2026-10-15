@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getCached, setCached } from '../../services/cache';
+import { fetchJobsList } from '../../services/jobsStore';
 import { JobApplication } from '../../types';
 import {
   Clock,
@@ -52,45 +53,16 @@ export const AdminDashboardPage: React.FC = () => {
   const fetchAdminStats = async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
-      // 1. High-speed 0-cost fetch from Server API (Disk & Cloudflare R2 backed)
+      // 1. জবের সংখ্যা R2 থেকে (Firestore read লাগে না)
+      let jobsTotal = 0;
       try {
-        const [appRes, jobRes] = await Promise.all([
-          fetch('/api/applications'),
-          fetch('/api/jobs?limit=1000'),
-        ]);
-        if (appRes.ok) {
-          const appData = await appRes.json();
-          const apps = Array.isArray(appData?.applications) ? appData.applications : [];
-          let jobsCount = 0;
-          if (jobRes.ok) {
-            const jData = await jobRes.json();
-            jobsCount = typeof jData?.total === 'number' ? jData.total : (Array.isArray(jData?.jobs) ? jData.jobs.length : 0);
-          }
+        const allJobs = await fetchJobsList(true);
+        jobsTotal = allJobs.length;
+      } catch {
+        // জবের সংখ্যা না পেলে 0 দেখাবে
+      }
 
-          const computedCounts = {
-            waiting: apps.filter((a: any) => a.status === 'waiting').length,
-            applyNow: apps.filter((a: any) => a.status === 'apply_now').length,
-            checking: apps.filter((a: any) => a.status === 'checking' || a.status === 'correction').length,
-            paymentNow: apps.filter((a: any) => a.status === 'payment_now').length,
-            complete: apps.filter((a: any) => a.status === 'applied').length,
-            rejected: apps.filter((a: any) => a.status === 'rejected').length,
-            jobsTotal: jobsCount,
-          };
-          setCounts(computedCounts);
-          setCached('admin_dashboard_counts', computedCounts);
-
-          const urgent = apps
-            .filter((a: any) => ['waiting', 'apply_now', 'payment_now'].includes(a.status))
-            .slice(0, 5);
-          setUrgentApps(urgent);
-          setCached('admin_dashboard_urgent', urgent);
-          setLoading(false);
-          setIsRefreshing(false);
-          return;
-        }
-      } catch {}
-
-      // 2. Fallback to Firestore getCountFromServer
+      // 2. আবেদনের সংখ্যা Firestore থেকে (আবেদন ব্যবহারকারীর ডেটা, তাই এখনো Firestore-এ)
       const [
         waitingCountSnap,
         applyNowCountSnap,
@@ -99,7 +71,6 @@ export const AdminDashboardPage: React.FC = () => {
         paymentNowCountSnap,
         completeCountSnap,
         rejectedCountSnap,
-        jobsCountSnap,
       ] = await Promise.all([
         getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'waiting'))),
         getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'apply_now'))),
@@ -108,7 +79,6 @@ export const AdminDashboardPage: React.FC = () => {
         getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'payment_now'))),
         getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'applied'))),
         getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'rejected'))),
-        getCountFromServer(collection(db, 'jobs')),
       ]);
 
       const updatedCounts = {
@@ -118,7 +88,7 @@ export const AdminDashboardPage: React.FC = () => {
         paymentNow: paymentNowCountSnap.data().count,
         complete: completeCountSnap.data().count,
         rejected: rejectedCountSnap.data().count,
-        jobsTotal: jobsCountSnap.data().count,
+        jobsTotal,
       };
 
       setCounts(updatedCounts);
@@ -175,7 +145,7 @@ export const AdminDashboardPage: React.FC = () => {
     },
     {
       title: 'Payment Now',
-      sub: 'টেলিটক ফি পরিশোধের অপেক্ষায়',
+      sub: 'টেলিটক ফি পরিশোধের অপেক্ষায়',
       count: counts.paymentNow,
       icon: CreditCard,
       color: 'bg-rose-500',
@@ -250,7 +220,7 @@ export const AdminDashboardPage: React.FC = () => {
               Teletalk-এ ১-ক্লিকে প্রার্থীর আবেদন ও ছবি-স্বাক্ষর পূরণের জন্য Autofill Extension
             </h3>
             <p className="text-xs text-emerald-100/80 leading-relaxed">
-              অ্যাডমিন প্যানেলে Apply Now সেকশন থেকে <strong>"Autofill-এ পাঠান ও Teletalk পোর্টাল খুলুন"</strong> দিলে প্রার্থীর সকল তথ্য, ছবি (৩০০×৩০০) ও স্বাক্ষর (৩০০×৮০) সরাসরি এই এক্সটেনশনটি দিয়ে টেলিটক পোর্টালে এক ক্লিকে স্বয়ংক্রিয়ভাবে পূরণ হয়ে যায়।
+              অ্যাডমিন প্যানেলে Apply Now সেকশন থেকে <strong>"Autofill-এ পাঠান ও Teletalk পোর্টাল খুলুন"</strong> দিলে প্রার্থীর সকল তথ্য, ছবি (৩০০×৩০০) ও স্বাক্ষর (৩০০×৮০) সরাসরি এই এক্সটেনশনটি দিয়ে টেলিটক পোর্টালে এক ক্লিকে স্বয়ংক্রিয়ভাবে পূরণ হয়ে যায়।
             </p>
           </div>
 
@@ -282,7 +252,7 @@ export const AdminDashboardPage: React.FC = () => {
               </span>
               <strong className="text-white block font-bold">ফাইল ডাউনলোড ও আনজিপ</strong>
               <p className="text-emerald-200/80 text-[11px]">
-                উপরের বাটন দিয়ে <strong>bd-job-autofill-extension.zip</strong> ডাউনলোড করে কম্পিউটারে আনজিপ (Extract) করুন।
+                উপরের বাটন দিয়ে <strong>bd-job-autofill-extension.zip</strong> ডাউনলোড করে কম্পিউটারে আনজিপ (Extract) করুন।
               </p>
             </div>
 
@@ -312,7 +282,7 @@ export const AdminDashboardPage: React.FC = () => {
               </span>
               <strong className="text-white block font-bold">Load unpacked সিলেক্ট করুন</strong>
               <p className="text-emerald-200/80 text-[11px]">
-                বামপাশের উপরের <strong>"Load unpacked"</strong> বাটনে ক্লিক করে আনজিপ করা <code className="bg-black/40 px-1 py-0.5 rounded text-emerald-300">extension</code> ফোল্ডারটি দেখিয়ে দিন।
+                বামপাশের উপরের <strong>"Load unpacked"</strong> বাটনে ক্লিক করে আনজিপ করা <code className="bg-black/40 px-1 py-0.5 rounded text-emerald-300">extension</code> ফোল্ডারটি দেখিয়ে দিন।
               </p>
             </div>
           </div>
@@ -376,7 +346,7 @@ export const AdminDashboardPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 space-y-3">
         <h3 className="font-semibold text-gray-900 text-xs sm:text-sm flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-emerald-600" />
-          <span>আবেদন প্রক্রিয়াকরণের ৫টি নির্ধারিত ধাপ:</span>
+          <span>আবেদন প্রক্রিয়াকরণের ৫টি নির্ধারিত ধাপ:</span>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 sm:gap-3 pt-2">
           <div className="p-3 bg-amber-50 rounded-lg text-xs border border-amber-100">
@@ -397,7 +367,7 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
           <div className="p-3 bg-emerald-50 rounded-lg text-xs border border-emerald-100">
             <span className="font-bold text-emerald-800 block mb-1">৫. Complete</span>
-            <p className="text-emerald-700 text-[11px]">আবেদন সফল ও সম্পন্ন হয়েছে। পেইড কপি সংরক্ষিত।</p>
+            <p className="text-emerald-700 text-[11px]">আবেদন সফল ও সম্পন্ন হয়েছে। পেইড কপি সংরক্ষিত।</p>
           </div>
         </div>
       </div>
