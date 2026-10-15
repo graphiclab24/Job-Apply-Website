@@ -90,3 +90,24 @@ export async function deleteJobInWorker(id: string): Promise<void> {
   const remaining = current.filter((j) => j.id !== id);
   await postAllJobs(remaining);
 }
+
+/** পাবলিক JSON ফাইল (যেমন পেমেন্ট সেটিংস) Worker দিয়ে R2-তে লেখা */
+export async function putPublicJson(name: string, data: unknown): Promise<void> {
+  const token = getAdminToken();
+  const res = await fetch(`${WORKER_URL}/admin/public/${name}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (res.status === 401) {
+    sessionStorage.removeItem(TOKEN_KEY);
+    throw new Error('অ্যাডমিন টোকেন ভুল');
+  }
+  if (!res.ok) {
+    throw new Error(`সংরক্ষণ ব্যর্থ (HTTP ${res.status})`);
+  }
+}
