@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Briefcase,
@@ -15,8 +15,11 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getCountFromServer } from 'firebase/firestore';
 import { db } from '../services/firebase';
+
+// নোটিফিকেশন সংখ্যা ৫ মিনিট পর্যন্ত একই থাকবে (Firestore read বাঁচাতে)
+const COUNT_TTL_MS = 5 * 60 * 1000;
 
 export const UserLayout: React.FC = () => {
   const { user, mobile, logout } = useAuth();
@@ -25,29 +28,38 @@ export const UserLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // শেষ কখন গণনা করা হয়েছে (ইউজার অনুযায়ী)
+  const lastFetchRef = useRef<{ uid: string; ts: number }>({ uid: '', ts: 0 });
+
+  const loadUnreadCount = useCallback(
+    async (force = false) => {
+      if (!user) return;
+      const now = Date.now();
+      const last = lastFetchRef.current;
+      if (!force && last.uid === user.uid && now - last.ts < COUNT_TTL_MS) return;
+
+      try {
+        const q = query(
+          collection(db, 'notifications'),
+          where('uid', '==', user.uid),
+          where('read', '==', false)
+        );
+        const snap = await getCountFromServer(q);
+        setUnreadCount(snap.data().count);
+        lastFetchRef.current = { uid: user.uid, ts: Date.now() };
+      } catch {
+        // গণনা ব্যর্থ হলে নীরবে আগের সংখ্যা থাকবে
+      }
+    },
+    [user]
+  );
+
+  // লগইনের সময় একবার, এবং নোটিফিকেশন পেজে গেলে নতুন করে
   useEffect(() => {
     if (!user) return;
-    try {
-      const q = query(
-        collection(db, 'notifications'),
-        where('uid', '==', user.uid),
-        where('read', '==', false),
-        limit(20)
-      );
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          setUnreadCount(snapshot.size);
-        },
-        (error) => {
-          // Handled silently
-        }
-      );
-      return () => unsubscribe();
-    } catch (e) {
-      // Handled silently
-    }
-  }, [user]);
+    const onNotifications = location.pathname.startsWith('/notifications');
+    loadUnreadCount(onNotifications);
+  }, [user, location.pathname, loadUnreadCount]);
 
   const navItems = [
     { to: '/dashboard', label: 'ড্যাশবোর্ড', icon: Home },
