@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { fetchJobsList } from '../../services/jobsStore';
 import { JobCircular, CandidateProfile } from '../../types';
 import { calculateCVCompleteness } from '../../utils/cvValidation';
 import { isValidMobile } from '../../utils/auth';
@@ -35,12 +36,14 @@ export const ApplyJobPage: React.FC = () => {
 
     const fetchData = async () => {
       try {
-        const jobRef = doc(db, 'jobs', jobId);
-        const jobSnap = await getDoc(jobRef);
-        if (jobSnap.exists()) {
-          setJob({ id: jobSnap.id, ...jobSnap.data() } as JobCircular);
+        // জব এখন R2 থেকে (Firestore 'jobs' নয়)। আইডি বা স্লাগ দিয়ে খোঁজা হয়।
+        const list = await fetchJobsList();
+        const found = list.find((j: any) => j.id === jobId || j.slug === jobId);
+        if (found) {
+          setJob(found as JobCircular);
         }
 
+        // প্রোফাইল এখনো Firestore-এ (সিভি পেজ স্থানান্তরের পরে এটিও বদলাবে)
         const profRef = doc(db, 'profiles', user.uid);
         const profSnap = await getDoc(profRef);
         if (profSnap.exists()) {
@@ -74,7 +77,7 @@ export const ApplyJobPage: React.FC = () => {
   if (!job) {
     return (
       <div className="max-w-md mx-auto p-6 bg-white rounded-xl border border-gray-200 text-center space-y-4">
-        <p className="text-sm font-semibold text-gray-800">চাকরির বিজ্ঞপ্তিটি পাওয়া যায়নি।</p>
+        <p className="text-sm font-semibold text-gray-800">চাকরির বিজ্ঞপ্তিটি পাওয়া যায়নি।</p>
         <Link to="/jobs">
           <Button variant="outline" size="sm">সকল চাকরি দেখুন</Button>
         </Link>
@@ -127,13 +130,19 @@ export const ApplyJobPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const q = query(
-        collection(db, 'applications'),
-        where('uid', '==', user?.uid),
-        where('jobId', '==', job.id),
-        where('postName', '==', selectedPostName)
-      );
-      const existing = await getDocs(q);
+      // ডুপ্লিকেট চেক। ব্যর্থ হলে (যেমন Firestore সীমা শেষ) আবেদন আটকাবে না।
+      let existing: any = { empty: true };
+      try {
+        const q = query(
+          collection(db, 'applications'),
+          where('uid', '==', user?.uid),
+          where('jobId', '==', job.id),
+          where('postName', '==', selectedPostName)
+        );
+        existing = await getDocs(q);
+      } catch (dupErr) {
+        console.warn('Duplicate check skipped:', dupErr);
+      }
       if (!existing.empty) {
         setLocalError('আপনি ইতিপূর্বেই এই সার্কুলারের নির্বাচিত পদে আবেদন করেছেন!');
         setSubmitting(false);
@@ -173,7 +182,7 @@ export const ApplyJobPage: React.FC = () => {
         },
       });
     } catch (err: any) {
-      setLocalError('আবেদন প্রস্তুত করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+      setLocalError('আবেদন প্রস্তুত করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
     } finally {
       setSubmitting(false);
     }
@@ -346,7 +355,7 @@ export const ApplyJobPage: React.FC = () => {
               className="w-4 h-4 text-emerald-600 rounded mt-0.5"
             />
             <span className="leading-snug">
-              আমি চাকরির সার্কুলারের সকল শর্তাবলী পড়েছি এবং আমার দেওয়া সকল তথ্য সত্য ও নির্ভুল। আমি আবেদনটি প্রস্তুত করতে সম্মতি প্রদান করছি।
+              আমি চাকরির সার্কুলারের সকল শর্তাবলী পড়েছি এবং আমার দেওয়া সকল তথ্য সত্য ও নির্ভুল। আমি আবেদনটি প্রস্তুত করতে সম্মতি প্রদান করছি।
             </span>
           </label>
 
