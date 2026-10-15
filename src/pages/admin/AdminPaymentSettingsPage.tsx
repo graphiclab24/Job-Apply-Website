@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../services/firebase';
+import { R2_BASE, putPublicJson } from '../../services/jobsStore';
 import { PaymentSettings } from '../../types';
 import { invalidateCache } from '../../services/cache';
 import { Input } from '../../components/common/Input';
@@ -9,14 +8,15 @@ import { Spinner } from '../../components/common/Spinner';
 import { useToast } from '../../components/common/Toast';
 import { Settings, Save, ShieldCheck, MessageCircle } from 'lucide-react';
 
+const DEFAULT_INSTRUCTIONS =
+  'bKash, Rocket বা Nagad অ্যাপ থেকে Send Money করুন এবং Reference-এ আপনার আবেদন আইডি দিন।';
+
 export const AdminPaymentSettingsPage: React.FC = () => {
   const [bkashNumber, setBkashNumber] = useState('01704368053');
   const [rocketNumber, setRocketNumber] = useState('01771522503');
   const [nagadNumber, setNagadNumber] = useState('01771522503');
   const [whatsappNumber, setWhatsappNumber] = useState('01704368053');
-  const [instructions, setInstructions] = useState(
-    'bKash, Rocket বা Nagad অ্যাপ থেকে Send Money করুন এবং Reference-এ আপনার আবেদন আইডি দিন।'
-  );
+  const [instructions, setInstructions] = useState(DEFAULT_INSTRUCTIONS);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -25,16 +25,17 @@ export const AdminPaymentSettingsPage: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const snap = await getDoc(doc(db, 'settings', 'payment'));
-        if (snap.exists()) {
-          const data = snap.data() as PaymentSettings;
+        // R2 থেকে পড়া (Firestore লাগে না)। ফাইল না থাকলে ডিফল্ট মান থাকবে।
+        const res = await fetch(`${R2_BASE}/settings-payment.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = (await res.json()) as PaymentSettings;
           setBkashNumber(data.bkashNumber || '01704368053');
           setRocketNumber(data.rocketNumber || '01771522503');
           setNagadNumber(data.nagadNumber || '01771522503');
           setWhatsappNumber(data.whatsappNumber || '01704368053');
-          setInstructions(data.instructions || 'bKash, Rocket বা Nagad অ্যাপ থেকে Send Money করুন এবং Reference-এ আপনার আবেদন আইডি দিন।');
+          setInstructions(data.instructions || DEFAULT_INSTRUCTIONS);
         }
-      } catch (err) {
+      } catch {
         // Silently handled
       } finally {
         setLoading(false);
@@ -47,23 +48,19 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await setDoc(
-        doc(db, 'settings', 'payment'),
-        {
-          bkashNumber: bkashNumber.trim(),
-          rocketNumber: rocketNumber.trim(),
-          nagadNumber: nagadNumber.trim(),
-          whatsappNumber: whatsappNumber.trim(),
-          instructions: instructions.trim(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await putPublicJson('settings-payment', {
+        bkashNumber: bkashNumber.trim(),
+        rocketNumber: rocketNumber.trim(),
+        nagadNumber: nagadNumber.trim(),
+        whatsappNumber: whatsappNumber.trim(),
+        instructions: instructions.trim(),
+        updatedAt: new Date().toISOString(),
+      });
       invalidateCache('settings_');
-      success('পেমেন্ট ও যোগাযোগ সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
+      success('পেমেন্ট ও যোগাযোগ সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
     } catch (err: any) {
       console.error('Settings save error:', err);
-      error(err?.message || 'সেটিংস সংরক্ষণ ব্যর্থ হয়েছে');
+      error(err?.message || 'সেটিংস সংরক্ষণ ব্যর্থ হয়েছে');
     } finally {
       setSaving(false);
     }
@@ -112,7 +109,7 @@ export const AdminPaymentSettingsPage: React.FC = () => {
         />
 
         <Input
-          label="অফিসিয়াল WhatsApp হেল্পলাইন নম্বর"
+          label="অফিসিয়াল WhatsApp হেল্পলাইন নম্বর"
           placeholder="017XXXXXXXX"
           value={whatsappNumber}
           onChange={(e) => setWhatsappNumber(e.target.value)}
