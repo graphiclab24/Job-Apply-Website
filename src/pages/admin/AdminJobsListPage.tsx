@@ -85,7 +85,7 @@ export const AdminJobsListPage: React.FC = () => {
 
       // 1.5. Try direct Cloudflare R2 public URL (100% uptime, quota-immune)
       try {
-        const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+        const r2Res = await fetch('https://files.bdjobapply.site/jobs.json');
         if (r2Res.ok) {
           const r2Data = await r2Res.json();
           if (Array.isArray(r2Data)) {
@@ -101,7 +101,7 @@ export const AdminJobsListPage: React.FC = () => {
 
       // 2. Fallback to Cloudflare R2 CDN directly
       try {
-        const r2Res = await fetch('https://pub-1c4d2bddd5d943c38d6824eeb890c6f0.r2.dev/jobs.json');
+        const r2Res = await fetch('https://files.bdjobapply.site/jobs.json');
         if (r2Res.ok) {
           const r2Jobs = await r2Res.json();
           if (Array.isArray(r2Jobs) && r2Jobs.length > 0) {
