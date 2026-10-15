@@ -35,14 +35,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * অ্যাডমিন ইমেইল তালিকা। Firestore rules-এও একই তালিকা আছে।
+ * নতুন অ্যাডমিন যোগ করলে এখানে এবং firestore.rules-এ দুই জায়গাতেই যোগ করতে হবে।
+ */
+const ADMIN_EMAILS = ['habiblinkage@gmail.com', 'masterboom2040@gmail.com'];
+
 const isOwnerEmail = (emailToCheck?: string | null) => {
   if (!emailToCheck) return false;
-  const em = emailToCheck.toLowerCase().trim();
-  return (
-    em === 'habiblinkage@gmail.com' ||
-    em === 'masterboom2040@gmail.com' ||
-    em === 'admin@studyonlinebd.com'
-  );
+  return ADMIN_EMAILS.includes(emailToCheck.toLowerCase().trim());
 };
 
 const getStoredRole = (): UserRole | null => {
@@ -95,58 +96,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearError = () => setError(null);
 
+  // পেজ খোলার সময় কোনো Firestore read নেই।
+  // অ্যাডমিন = ইমেইল তালিকা; বাকিরা = ইউজার, মোবাইল ইমেইল থেকে বের হয়।
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        try {
-          const isOwner = isOwnerEmail(currentUser.email);
-          if (isOwner) {
-            setRole('admin');
-            setMobile(null);
-            persistRole('admin');
-            persistMobile(null);
-            setLoading(false);
 
-            // Background admin doc touch if needed
-            const adminDocRef = doc(db, 'admins', currentUser.uid);
-            getDoc(adminDocRef).then((snap) => {
-              if (!snap.exists()) {
-                setDoc(adminDocRef, {
-                  email: currentUser.email,
-                  role: 'admin',
-                  createdAt: serverTimestamp(),
-                }).catch(() => {});
-              }
-            }).catch(() => {});
-            return;
-          }
-
-          const adminDocRef = doc(db, 'admins', currentUser.uid);
-          const adminDoc = await getDoc(adminDocRef);
-
-          if (adminDoc.exists()) {
-            setRole('admin');
-            setMobile(null);
-            persistRole('admin');
-            persistMobile(null);
-          } else {
-            // Check if regular user
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            const userDoc = await getDoc(userDocRef);
-            const userMobile = userDoc.exists()
-              ? userDoc.data()?.mobile || emailToMobile(currentUser.email || '')
-              : emailToMobile(currentUser.email || '');
-
-            setRole('user');
-            setMobile(userMobile);
-            persistRole('user');
-            if (userMobile) persistMobile(userMobile);
-          }
-        } catch (err) {
-          // Handled silently
-          setRole('user');
-          persistRole('user');
+        if (isOwnerEmail(currentUser.email)) {
+          setRole('admin');
+          setMobile(null);
+          persistRole('admin');
+          persistMobile(null);
+        } else {
+          // আগে লগইনের সময় যিনি অ্যাডমিন হিসেবে যাচাই হয়েছিলেন, তার role বজায় থাকে
+          const wasAdmin = getStoredRole() === 'admin';
+          const userMobile = emailToMobile(currentUser.email || '') || null;
+          setRole(wasAdmin ? 'admin' : 'user');
+          persistRole(wasAdmin ? 'admin' : 'user');
+          setMobile(wasAdmin ? null : userMobile);
+          if (!wasAdmin && userMobile) persistMobile(userMobile);
         }
       } else {
         setUser(null);
@@ -228,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
-        throw new Error('এই মোবাইল নম্বর বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।');
+        throw new Error('এই মোবাইল নম্বর বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।');
       }
       throw new Error(err.message || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
     }
@@ -248,11 +217,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
       } catch (signInErr: any) {
-        // Modern Firebase Auth returns 'auth/invalid-credential' instead of 'user-not-found' due to email enumeration protection
+        // তালিকার অ্যাডমিনের প্রথম লগইনে অ্যাকাউন্ট না থাকলে তৈরি করা হবে
         if (
           isOwner &&
-          (signInErr.code === 'auth/user-not-found' ||
-           signInErr.code === 'auth/invalid-credential')
+          (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential')
         ) {
           try {
             cred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
@@ -267,58 +235,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // If owner, grant admin role immediately without blocking on Firestore network call
       if (isOwner) {
+        // তালিকার অ্যাডমিন: কোনো Firestore read নয়
         setRole('admin');
-        try {
-          sessionStorage.setItem('auth_role', 'admin');
-        } catch {}
-
-        // Touch admin doc in background without blocking login
-        try {
-          const adminDocRef = doc(db, 'admins', cred.user.uid);
-          setDoc(
-            adminDocRef,
-            {
-              email: cred.user.email,
-              role: 'admin',
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          ).catch((e) => console.warn('Background admin doc sync:', e));
-        } catch (e) {
-          // Ignore
-        }
+        persistRole('admin');
+        persistMobile(null);
         return;
       }
 
-      // For non-owner admin verification
-      try {
-        const adminDocRef = doc(db, 'admins', cred.user.uid);
-        const adminDoc = await getDoc(adminDocRef);
-
-        if (!adminDoc.exists()) {
-          await signOut(auth);
-          throw new Error('আপনি অ্যাডমিন নন। প্রবেশাধিকার সংরক্ষিত।');
-        }
-      } catch (checkErr: any) {
-        if (checkErr.message?.includes('offline')) {
-          console.warn('Firestore offline notice during admin check');
-        } else {
-          throw checkErr;
-        }
+      // তালিকার বাইরের ইমেইল: শুধু লগইনের সময় admins collection যাচাই (একবার)
+      const adminDoc = await getDoc(doc(db, 'admins', cred.user.uid));
+      if (!adminDoc.exists()) {
+        await signOut(auth);
+        throw new Error('আপনি অ্যাডমিন নন। প্রবেশাধিকার সংরক্ষিত।');
       }
 
       setRole('admin');
-      try {
-        sessionStorage.setItem('auth_role', 'admin');
-      } catch {}
+      persistRole('admin');
+      persistMobile(null);
     } catch (err: any) {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
         throw new Error('ইমেইল বা পাসওয়ার্ড সঠিক নয়');
       }
       if (err.code === 'auth/unauthorized-domain') {
-        throw new Error('এই ডোমেনটি Firebase Console-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized Domains-এ আপনার ডোমেনটি যুক্ত করুন।');
+        throw new Error('এই ডোমেনটি Firebase Console-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized Domains-এ আপনার ডোমেনটি যুক্ত করুন।');
       }
       throw err;
     }
@@ -327,54 +267,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     clearError();
     try {
-      // Use clean standard Google Auth Provider (ZERO Drive scopes = instant login, no developer verification warning)
+      // Clean standard Google Auth Provider (ZERO Drive scopes = instant login, no developer verification warning)
       const result = await signInWithPopup(auth, cleanUserGoogleProvider);
 
-      const isOwner = isOwnerEmail(result.user.email);
-      if (isOwner) {
-        const adminDocRef = doc(db, 'admins', result.user.uid);
-        const adminDoc = await getDoc(adminDocRef);
-        if (!adminDoc.exists()) {
-          try {
-            await setDoc(adminDocRef, {
-              email: result.user.email,
-              role: 'admin',
-              createdAt: serverTimestamp(),
-            });
-          } catch (e) {
-            console.warn('Admin doc init warning:', e);
-          }
-        }
+      if (isOwnerEmail(result.user.email)) {
         setRole('admin');
+        persistRole('admin');
         return;
       }
 
-      // Check / ensure user profile exists in Firestore
-      const userDocRef = doc(db, 'users', result.user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        const adminDoc = await getDoc(doc(db, 'admins', result.user.uid));
-        if (!adminDoc.exists()) {
-          try {
-            await setDoc(userDocRef, {
-              email: result.user.email || '',
-              displayName: result.user.displayName || '',
-              role: 'user',
-              createdAt: serverTimestamp(),
-            });
-          } catch (e) {
-            console.warn('User document init warning:', e);
-          }
-        }
+      // তালিকার বাইরের অ্যাডমিন হলে (লগইনের সময় একবার যাচাই)
+      const adminDoc = await getDoc(doc(db, 'admins', result.user.uid));
+      if (adminDoc.exists()) {
+        setRole('admin');
+        persistRole('admin');
+        return;
+      }
+
+      // সাধারণ ইউজার: প্রোফাইল একবার লিখে দেওয়া (merge, পড়া ছাড়া)
+      try {
+        await setDoc(
+          doc(db, 'users', result.user.uid),
+          {
+            email: result.user.email || '',
+            displayName: result.user.displayName || '',
+            role: 'user',
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('User document init warning:', e);
       }
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user') {
-        throw new Error('Google লগইন উইন্ডো বন্ধ করা হয়েছে');
+        throw new Error('Google লগইন উইন্ডো বন্ধ করা হয়েছে');
       }
       if (err.code === 'auth/unauthorized-domain') {
-        throw new Error('এই ডোমেনটি Firebase Console-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized Domains-এ আপনার Cloudflare ডোমেন যুক্ত করুন।');
+        throw new Error('এই ডোমেনটি Firebase Console-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized Domains-এ আপনার Cloudflare ডোমেন যুক্ত করুন।');
       }
-      throw new Error(err.message || 'Google দিয়ে লগইন ব্যর্থ হয়েছে');
+      throw new Error(err.message || 'Google দিয়ে লগইন ব্যর্থ হয়েছে');
     }
   };
 
