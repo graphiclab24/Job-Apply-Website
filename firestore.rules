@@ -3,33 +3,22 @@ service cloud.firestore {
   match /databases/{db}/documents {
 
     function signedIn() { return request.auth != null; }
+
+    // অ্যাডমিন: admins collection-এ থাকা UID অথবা নির্দিষ্ট ২টি ইমেইল
     function isAdmin() {
       return signedIn() && (
-        exists(/databases/$(db)/documents/admins/$(request.auth.uid)) ||
         (request.auth.token.email != null && (
-          request.auth.token.email == 'habiblinkage@gmail.com' ||
-          request.auth.token.email == 'masterboom2040@gmail.com' ||
-          request.auth.token.email == 'admin@studyonlinebd.com' ||
           request.auth.token.email.lower() == 'habiblinkage@gmail.com' ||
-          request.auth.token.email.lower() == 'masterboom2040@gmail.com' ||
-          request.auth.token.email.lower() == 'admin@studyonlinebd.com'
-        ))
+          request.auth.token.email.lower() == 'masterboom2040@gmail.com'
+        )) ||
+        exists(/databases/$(db)/documents/admins/$(request.auth.uid))
       );
     }
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
 
     match /admins/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isAdmin() || (
-        signedIn() && (
-          request.auth.token.email == 'habiblinkage@gmail.com' ||
-          request.auth.token.email == 'masterboom2040@gmail.com' ||
-          request.auth.token.email == 'admin@studyonlinebd.com' ||
-          request.auth.token.email.lower() == 'habiblinkage@gmail.com' ||
-          request.auth.token.email.lower() == 'masterboom2040@gmail.com' ||
-          request.auth.token.email.lower() == 'admin@studyonlinebd.com'
-        )
-      );
+      allow write: if isAdmin();
     }
 
     match /users/{uid} {
@@ -55,12 +44,13 @@ service cloud.firestore {
     }
 
     match /files/{fileId} {
-      allow read: if resource.data.kind == 'cover' || (signedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin()));
-      allow create, update: if isAdmin() || (
-        signedIn() && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.kind in ['photo', 'signature', 'screenshot']
-      );
-      allow delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow read: if resource.data.kind == 'cover'
+        || (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || isAdmin();
+      allow create, update: if (signedIn() && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.kind in ['photo', 'signature', 'screenshot'])
+        || isAdmin();
+      allow delete: if (signedIn() && resource.data.ownerUid == request.auth.uid) || isAdmin();
     }
 
     match /exams/{id} {
@@ -74,6 +64,7 @@ service cloud.firestore {
     }
 
     match /trxIds/{trxId} {
+      // পেমেন্ট ডুপ্লিকেট চেকের জন্য signed-in ব্যবহারকারী পড়তে পারে
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
@@ -84,28 +75,30 @@ service cloud.firestore {
     }
 
     match /applications/{appId} {
-      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow read: if (signedIn() && resource.data.uid == request.auth.uid) || isAdmin();
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'waiting';
-      allow update: if isAdmin() || (
+      allow update: if (
         signedIn() && resource.data.uid == request.auth.uid
         && resource.data.status == 'checking'
         && request.resource.data.status in ['payment_now', 'correction']
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'correctionNote', 'updatedAt'])
-      );
+      ) || isAdmin();
       allow delete: if isAdmin();
     }
 
     match /notifications/{id} {
-      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow create: if isAdmin() || (signedIn() && request.resource.data.uid == request.auth.uid);
-      allow update: if signedIn() && resource.data.uid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow read: if (signedIn() && resource.data.uid == request.auth.uid) || isAdmin();
+      allow create: if (signedIn() && request.resource.data.uid == request.auth.uid) || isAdmin();
+      allow update: if (signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
       allow delete: if isAdmin();
     }
 
+    // OTP: ক্লায়েন্ট কোড এখনও OTP পড়ে, তাই সাময়িকভাবে খোলা।
+    // TODO: OTP যাচাই Worker-এ সরিয়ে read: if false করতে হবে।
     match /otps/{mobile} {
       allow read: if true;
       allow create, update: if mobile.matches('^01[3-9][0-9]{8}$')
@@ -114,15 +107,15 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // SMS queue-তে ফোন নম্বর ও OTP-এর লেখা থাকে, তাই শুধু অ্যাডমিন পড়তে পারবে
     match /smsQueue/{jobId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow create: if request.resource.data.recipient.matches('^01[3-9][0-9]{8}$')
         && request.resource.data.body.size() >= 10
         && request.resource.data.body.size() <= 160
         && request.resource.data.status == 'pending'
         && request.resource.data.type in ['otp', 'system'];
-      allow update: if request.resource.data.status in ['pending', 'sent', 'failed'];
-      allow delete: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     match /short_links/{code} {
