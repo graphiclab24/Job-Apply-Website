@@ -98,7 +98,7 @@ export const UserApplicationCard: React.FC<Props> = ({
         <div>
           <span className="text-gray-400 block">পেমেন্ট বিবরণ:</span>
           <span className="font-semibold text-gray-700 break-all block">
-            ৳{app.fee?.total} ({app.payment?.method}) • TrxID: {app.payment?.trxId}
+            ৳{app.fee?.total} ({app.payment?.method})
           </span>
         </div>
       </div>
