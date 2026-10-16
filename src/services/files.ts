@@ -1,6 +1,7 @@
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { getCached, setCached, invalidateCache } from './cache';
+import { auth, db } from './firebase';
+import { WORKER_URL, R2_BASE } from './jobsStore';
 
 export type FileKind = 'photo' | 'signature' | 'screenshot' | 'softcopy' | 'paidcopy' | 'cover';
 
@@ -11,17 +12,17 @@ export interface StoredFileDoc {
   appId?: string;
   mime: string;
   sizeBytes: number;
-  data: string; // Base64 dataURL (e.g. data:image/jpeg;base64,...)
+  data: string; // Base64 dataURL
   createdAt?: any;
 }
 
 // Limits in bytes
 export const FILE_LIMITS = {
-  PHOTO: 100 * 1024,      // 100 KB
-  SIGNATURE: 60 * 1024,   // 60 KB
-  SCREENSHOT: 150 * 1024, // 150 KB
-  COVER: 100 * 1024,      // 100 KB
-  PDF_RAW: 650 * 1024,    // 650 KB
+  PHOTO: 100 * 1024,
+  SIGNATURE: 60 * 1024,
+  SCREENSHOT: 150 * 1024,
+  COVER: 100 * 1024,
+  PDF_RAW: 650 * 1024,
 };
 
 // Fixed ID helper generators
@@ -34,9 +35,36 @@ export const getFileId = {
   cover: (jobId: string) => `job_${jobId}_cover`,
 };
 
-/**
- * Save file into Firestore 'files' collection
- */
+const isCoverId = (id: string) => id.startsWith('job_') && id.endsWith('_cover');
+
+/** Firebase ID token দিয়ে Worker-এ অনুরোধের হেডার */
+async function authHeaders(): Promise<Record<string, string>> {
+  const u = auth.currentUser;
+  if (!u) throw new Error('লগইন প্রয়োজন');
+  const token = await u.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
+
+/** Worker-এ সরাসরি লেখা (ক্যাশ ছাড়া) */
+async function putToWorker(id: string, record: StoredFileDoc): Promise<void> {
+  const url = record.kind === 'cover' ? `${WORKER_URL}/cover/${id}` : `${WORKER_URL}/file/${id}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify(record),
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('ফাইল সংরক্ষণের অনুমতি নেই। আবার লগইন করুন।');
+  }
+  if (res.status === 413) {
+    throw new Error('ফাইলের সাইজ অনেক বড়। ছোট ছবি দিন।');
+  }
+  if (!res.ok) {
+    throw new Error(`ফাইল সংরক্ষণ ব্যর্থ (HTTP ${res.status})`);
+  }
+}
+
+/** ফাইল সংরক্ষণ: cover → পাবলিক R2 (অ্যাডমিন), বাকি → প্রাইভেট R2 */
 export async function saveFile(payload: {
   id: string;
   ownerUid: string;
@@ -46,69 +74,110 @@ export async function saveFile(payload: {
   sizeBytes: number;
   data: string;
 }): Promise<void> {
-  const fileRef = doc(db, 'files', payload.id);
-  const dataToSave: StoredFileDoc = {
+  const record: StoredFileDoc = {
     ownerUid: payload.ownerUid,
     kind: payload.kind,
     mime: payload.mime,
     sizeBytes: payload.sizeBytes,
     data: payload.data,
-    createdAt: serverTimestamp(),
+    ...(payload.appId ? { appId: payload.appId } : {}),
   };
-
-  if (payload.appId) {
-    dataToSave.appId = payload.appId;
-  }
-
-  try {
-    await setDoc(fileRef, dataToSave);
-    setCached(`file_${payload.id}`, { ...dataToSave, id: payload.id });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `files/${payload.id}`);
-  }
+  await putToWorker(payload.id, record);
+  setCached(`file_${payload.id}`, { ...record, id: payload.id });
 }
 
 /**
- * Retrieve file from Firestore 'files' collection (uses 5-min cache)
+ * পুরনো Firestore `files` থেকে একটি ফাইল R2-তে নেওয়া, তারপর Firestore থেকে মোছা।
+ * R2-তে লেখা ব্যর্থ হলে Firestore ডকুমেন্ট অক্ষত থাকে, ডেটা হারায় না।
  */
-export async function getFile(id: string): Promise<StoredFileDoc | null> {
-  const cacheKey = `file_${id}`;
-  const cached = getCached<StoredFileDoc>(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
+async function migrateFromFirestore(id: string): Promise<StoredFileDoc | null> {
   try {
-    const fileRef = doc(db, 'files', id);
-    const snap = await getDoc(fileRef);
-    if (!snap.exists()) {
-      return null;
+    const ref = doc(db, 'files', id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+
+    const legacy = snap.data() as StoredFileDoc;
+    const record: StoredFileDoc = {
+      ownerUid: legacy.ownerUid,
+      kind: legacy.kind,
+      mime: legacy.mime,
+      sizeBytes: legacy.sizeBytes,
+      data: legacy.data,
+      ...(legacy.appId ? { appId: legacy.appId } : {}),
+    };
+
+    try {
+      await putToWorker(id, record); // আগে R2-তে
+      await deleteDoc(ref); // তারপর Firestore থেকে মোছা
+    } catch (err) {
+      // অনুমতি না থাকলে (যেমন সাধারণ ব্যবহারকারী অন্যের ফাইল) শুধু পড়া হবে
+      console.warn(`File ${id} migration skipped:`, err);
     }
-    const data = { id: snap.id, ...snap.data() } as StoredFileDoc;
-    setCached(cacheKey, data);
-    return data;
+    return { ...record, id };
   } catch (err) {
-    console.warn(`File ${id} fetch warning:`, err);
+    console.warn(`File ${id} legacy read skipped:`, err);
     return null;
   }
 }
 
 /**
- * Delete file from Firestore 'files' collection
+ * ফাইল পড়া (৫ মিনিট ক্যাশ)।
+ * ১. R2 (cover → পাবলিক, বাকি → Worker)
+ * ২. না পেলে পুরনো Firestore থেকে একবার, এবং R2-তে স্থানান্তর
  */
-export async function deleteFile(id: string): Promise<void> {
+export async function getFile(id: string): Promise<StoredFileDoc | null> {
+  const cacheKey = `file_${id}`;
+  const cached = getCached<StoredFileDoc>(cacheKey);
+  if (cached) return cached;
+
+  let found: StoredFileDoc | null = null;
+
   try {
-    const fileRef = doc(db, 'files', id);
-    await deleteDoc(fileRef);
-    invalidateCache(`file_${id}`);
+    if (isCoverId(id)) {
+      const res = await fetch(`${R2_BASE}/files/${id}.json`);
+      if (res.ok) found = await res.json();
+    } else {
+      const res = await fetch(`${WORKER_URL}/file/${id}`, { headers: await authHeaders() });
+      if (res.ok) {
+        found = await res.json();
+      } else if (res.status === 403) {
+        // অন্যের ফাইল: অনুমতি নেই
+        return null;
+      }
+    }
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `files/${id}`);
+    console.warn(`File ${id} R2 read warning:`, err);
   }
+
+  if (!found) {
+    found = await migrateFromFirestore(id);
+  }
+
+  if (!found) return null;
+  const withId = { ...found, id };
+  setCached(cacheKey, withId);
+  return withId;
 }
 
-/**
- * Validate Google Drive / Google Docs URL
- */
+/** ফাইল মোছা (মালিক বা অ্যাডমিন) */
+export async function deleteFile(id: string): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/file/${id}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`ফাইল মুছতে ব্যর্থ (HTTP ${res.status})`);
+  }
+  // পুরনো Firestore ডকুমেন্ট থাকলে সেটিও মুছে ফেলা
+  try {
+    await deleteDoc(doc(db, 'files', id));
+  } catch {
+    // না থাকলে বা অনুমতি না থাকলে সমস্যা নেই
+  }
+  invalidateCache(`file_${id}`);
+}
+
+/** Validate Google Drive / Google Docs URL */
 export function isValidDriveUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
   try {
@@ -135,7 +204,7 @@ export async function readPdfAsDataUrl(file: File): Promise<{ dataUrl: string; s
         sizeBytes: file.size,
       });
     };
-    reader.onerror = () => reject(new Error('ফাইল পড়তে ব্যর্থ হয়েছে'));
+    reader.onerror = () => reject(new Error('ফাইল পড়তে ব্যর্থ হয়েছে'));
     reader.readAsDataURL(file);
   });
 }
@@ -162,7 +231,7 @@ export function getOptimalMimeType(): 'image/avif' | 'image/webp' | 'image/jpeg'
 
 /**
  * Detects whether the client browser supports HTML5 Canvas WebP export.
- * Defaults to 'image/webp' for 30-40% smaller file sizes, crisper fonts, and instant mobile loading.
+ * Defaults to 'image/webp' for smaller file sizes.
  */
 export function getBestSmartImageMimeType(): 'image/webp' | 'image/jpeg' {
   try {
@@ -178,7 +247,7 @@ export function getBestSmartImageMimeType(): 'image/webp' | 'image/jpeg' {
 
 /**
  * Browser image resize & compress utility using HTML5 Canvas.
- * Produces ultra-compact WebP/AVIF base64 dataURL respecting maxWidth, maxHeight, and maxSizeBytes.
+ * Produces compact dataURL respecting maxWidth, maxHeight, and maxSizeBytes.
  */
 export async function compressImageToDataUrl(
   file: File,
@@ -194,7 +263,7 @@ export async function compressImageToDataUrl(
     reader.onload = (e) => {
       img.src = e.target?.result as string;
     };
-    reader.onerror = () => reject(new Error('ছবি পড়তে ব্যর্থ হয়েছে'));
+    reader.onerror = () => reject(new Error('ছবি পড়তে ব্যর্থ হয়েছে'));
 
     img.onload = () => {
       let width = img.width;
@@ -212,7 +281,7 @@ export async function compressImageToDataUrl(
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        reject(new Error('ক্যানভাস প্রসেসিং ব্যর্থ হয়েছে'));
+        reject(new Error('ক্যানভাস প্রসেসিং ব্যর্থ হয়েছে'));
         return;
       }
 
@@ -221,7 +290,7 @@ export async function compressImageToDataUrl(
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Iterative quality adjustment to stay strictly under maxSizeBytes
+      // Iterative quality adjustment to stay under maxSizeBytes
       let quality = 0.9;
       let dataUrl = canvas.toDataURL(mimeType, quality);
       let byteLength = estimateDataUrlBytes(dataUrl);
@@ -261,7 +330,7 @@ export async function compressImageToDataUrl(
       });
     };
 
-    img.onerror = () => reject(new Error('ছবি লোড করতে ব্যর্থ হয়েছে'));
+    img.onerror = () => reject(new Error('ছবি লোড করতে ব্যর্থ হয়েছে'));
     reader.readAsDataURL(file);
   });
 }
@@ -281,10 +350,10 @@ export async function downloadOrOpenFile(
 ): Promise<void> {
   const fileDoc = await getFile(fileId);
   if (!fileDoc || !fileDoc.data) {
-    throw new Error('ফাইল পাওয়া যায়নি বা মুছে ফেলা হয়েছে');
+    throw new Error('ফাইল পাওয়া যায়নি বা মুছে ফেলা হয়েছে');
   }
 
-  // Convert dataURL to Blob for reliable popup/download without url size limits
+  // Convert dataURL to Blob for reliable popup/download
   const parts = fileDoc.data.split(',');
   const mime = fileDoc.mime || parts[0]?.match(/:(.*?);/)?.[1] || 'application/octet-stream';
   const byteCharacters = atob(parts[1] || '');
@@ -305,10 +374,9 @@ export async function downloadOrOpenFile(
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
   } else {
-    // Open in new window/tab
     const w = window.open(blobUrl, '_blank');
     if (!w) {
-      // Fallback to download if popup blocked
+      // Popup blocked: download হিসেবে fallback
       const a = document.createElement('a');
       a.href = blobUrl;
       a.download = fallbackFilename;
