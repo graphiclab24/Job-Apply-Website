@@ -26,6 +26,7 @@ import {
   AutofillModal,
 } from '../../components/admin/ApplicationActionModals';
 import { Download, RefreshCw } from 'lucide-react';
+import { fetchProfileAsAdmin } from '../../services/profileStore';
 
 // ৫ মিনিট পর্যন্ত একই ধাপের তালিকা নতুন করে Firestore থেকে পড়া হবে না।
 // এটি শুধু মেমোরিতে থাকে, ব্রাউজারের স্থায়ী স্টোরেজে নয় (ব্যক্তিগত তথ্য)।
@@ -198,15 +199,15 @@ export const AdminApplicationsPage: React.FC = () => {
   const handleOpenAutofill = async (app: JobApplication) => {
     setActiveApp(app);
     try {
-      const snap = await getDoc(doc(db, 'profiles', app.uid));
-      if (snap.exists()) {
-        setActiveProfile(snap.data() as CandidateProfile);
+      const prof = await fetchProfileAsAdmin(app.uid);
+      if (prof) {
+        setActiveProfile(prof as CandidateProfile);
         setAutofillModalOpen(true);
       } else {
         error('প্রার্থীর সিভি প্রোফাইল পাওয়া যায়নি');
       }
-    } catch (e) {
-      error('প্রোফাইল লোড করতে সমস্যা হয়েছে');
+    } catch (e: any) {
+      error(e?.message || 'প্রোফাইল লোড করতে সমস্যা হয়েছে');
     }
   };
 
