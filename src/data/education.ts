@@ -202,11 +202,12 @@ export const QUOTA_CATEGORIES: readonly EducationOption[] = Object.freeze([
   { id: "5", name: "Orphan" },
   { id: "6", name: "Ethnic Minority" },
   { id: "7", name: "Ansar-VDP" },
-  { id: "8", name: "Non Quota" }
+  { id: "8", name: "Not Applicable" }
 ]);
 
 /** Dependency status options (ds) - relation of applicant to a Govt./Semi-Govt. employee */
 export const DEPENDENCY_STATUSES: readonly EducationOption[] = Object.freeze([
+  { id: "0", name: "Not Applicable" },
   { id: "1", name: "Govt. Employee" },
   { id: "2", name: "Semi Govt. Employee" },
   { id: "3", name: "Autonomous" },
