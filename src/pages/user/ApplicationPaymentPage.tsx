@@ -1,14 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { doc, serverTimestamp, collection, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import {
-  saveFile,
-  getFileId,
-  compressImageToDataUrl,
-  FILE_LIMITS,
-} from '../../services/files';
+import { saveFile, getFileId, compressImageToDataUrl, FILE_LIMITS } from '../../services/files';
 import { PaymentSettings, PaymentMethod } from '../../types';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
@@ -16,8 +11,8 @@ import { PaymentHeaderReference } from '../../components/payment/PaymentHeaderRe
 import { useToast } from '../../components/common/Toast';
 import { invalidateCache } from '../../services/cache';
 import { isValidMobile } from '../../utils/auth';
-import { submitJobApplication } from '../../services/applicationsService';
-import { R2_BASE } from '../../services/jobsStore';
+import { R2_BASE, WORKER_URL } from '../../services/jobsStore';
+import { auth } from '../../services/firebase';
 import { Copy, Check, AlertCircle, ArrowRight } from 'lucide-react';
 
 export const ApplicationPaymentPage: React.FC = () => {
@@ -46,7 +41,6 @@ export const ApplicationPaymentPage: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        // R2 থেকে পেমেন্ট নম্বর (Firestore লাগে না)। ফাইল না থাকলে ডিফল্ট মান ব্যবহার হবে।
         const res = await fetch(`${R2_BASE}/settings-payment.json`);
         if (res.ok) {
           const data = await res.json();
@@ -95,9 +89,9 @@ export const ApplicationPaymentPage: React.FC = () => {
     try {
       let hasScreenshot = false;
 
+      // ১. স্ক্রিনশট থাকলে R2-তে (প্রাইভেট) সংরক্ষণ
       if (screenshotFile) {
         setScreenshotUploading(true);
-        // Auto compress screenshot to <=150KB JPEG
         const compressed = await compressImageToDataUrl(
           screenshotFile,
           1000,
@@ -120,68 +114,48 @@ export const ApplicationPaymentPage: React.FC = () => {
         setScreenshotUploading(false);
       }
 
-      // 1. Submit to Server, Cloudflare R2 and Google Sheets
-      const submitPayload = {
-        id: state.appId,
-        uid: user.uid,
-        mobile: state.smsNumber,
-        fullName: state.fullName,
-        jobId: state.jobId,
-        jobTitle: state.jobTitle,
-        applyLink: state.applyLink || '',
-        postName: state.postName,
-        postCount: state.postCount,
-        district: state.district,
-        educationLevel: state.educationLevel,
-        smsNumber: state.smsNumber,
-        fee: state.fee,
-        payment: {
-          method: method as any,
-          senderNumber: cleanSender,
-          amount: state.fee.total,
-          submittedAt: new Date().toISOString(),
+      // ২. আবেদন D1-এ জমা (সার্ভার জব, পদ ও ফি যাচাই করে)
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('লগইন প্রয়োজন। আবার লগইন করুন।');
+
+      const res = await fetch(`${WORKER_URL}/api/applications`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        hasScreenshot,
-      };
+        body: JSON.stringify({
+          jobId: state.jobId,
+          postName: state.postName,
+          district: state.district,
+          educationLevel: state.educationLevel,
+          fullName: state.fullName,
+          smsNumber: state.smsNumber,
+          payment: {
+            method: method as any,
+            senderNumber: cleanSender,
+          },
+          hasScreenshot,
+        }),
+      });
 
-      await submitJobApplication(submitPayload);
-
-      // 2. আবেদন Firestore-এ সেভ (Transaction ID নেই)
-      try {
-        const appDocRef = doc(db, 'applications', state.appId);
-
-        await setDoc(appDocRef, {
-          ...submitPayload,
-          termsAccepted: true,
-          status: 'waiting',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        const notifId = doc(collection(db, 'notifications')).id;
-        await setDoc(doc(db, 'notifications', notifId), {
-          uid: user.uid,
-          title: 'আবেদন সফলভাবে সাবমিট হয়েছে',
-          body: `আপনার আবেদন (${state.appId}) প্রাপ্ত হয়েছে। পেমেন্ট যাচাই শেষে অপারেটর Teletalk-এ আবেদন সম্পন্ন করবেন।`,
-          appId: state.appId,
-          read: false,
-          createdAt: serverTimestamp(),
-        }).catch(() => {});
-      } catch (fbErr: any) {
-        console.warn('Background Firestore sync notice:', fbErr?.message || fbErr);
+      if (res.status === 409) {
+        throw new Error('এই পদে ইতিপূর্বে আপনি আবেদন করেছেন।');
       }
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || `আবেদন জমা ব্যর্থ (HTTP ${res.status})`);
+      }
+
+      const result = await res.json();
 
       invalidateCache('user_');
       invalidateCache('admin_');
-      success('আপনার আবেদন যাচাইয়ের অপেক্ষায় আছে!');
+      success(`আপনার আবেদন জমা হয়েছে (${result.application.id})। যাচাইয়ের অপেক্ষায় আছে।`);
       navigate('/applications/waiting', { replace: true });
     } catch (err: any) {
       console.error('Payment submit error:', err);
-      if (err.message && err.message.toLowerCase().includes('permission')) {
-        setLocalError('অনুমোদন যাচাই ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন বা পুনরায় লগইন করুন।');
-      } else {
-        setLocalError(err?.message || 'পেমেন্ট সাবমিট করতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
-      }
+      setLocalError(err?.message || 'পেমেন্ট সাবমিট করতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
     } finally {
       setSubmitting(false);
       setScreenshotUploading(false);
@@ -252,9 +226,7 @@ export const ApplicationPaymentPage: React.FC = () => {
               <span className="text-[11px] text-emerald-800 block">
                 {method === 'bkash' ? 'bKash নম্বর:' : method === 'rocket' ? 'Rocket নম্বর:' : 'Nagad নম্বর:'}
               </span>
-              <span className="font-mono text-base font-bold text-emerald-950">
-                {activeNumber}
-              </span>
+              <span className="font-mono text-base font-bold text-emerald-950">{activeNumber}</span>
             </div>
             {activeNumber && (
               <button
@@ -291,9 +263,7 @@ export const ApplicationPaymentPage: React.FC = () => {
           />
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              পেমেন্ট স্ক্রিনশট (ঐচ্ছিক)
-            </label>
+            <label className="block text-xs font-bold text-gray-700 mb-1">পেমেন্ট স্ক্রিনশট (ঐচ্ছিক)</label>
             <input
               type="file"
               accept="image/*"
