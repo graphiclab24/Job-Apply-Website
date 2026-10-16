@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { fetchMyProfileWithMigration } from '../../services/profileStore';
 import { db } from '../../services/firebase';
 import { fetchJobsList } from '../../services/jobsStore';
 import { JobCircular, CandidateProfile } from '../../types';
@@ -44,10 +44,8 @@ export const ApplyJobPage: React.FC = () => {
         }
 
         // প্রোফাইল এখনো Firestore-এ (সিভি পেজ স্থানান্তরের পরে এটিও বদলাবে)
-        const profRef = doc(db, 'profiles', user.uid);
-        const profSnap = await getDoc(profRef);
-        if (profSnap.exists()) {
-          const profData = profSnap.data() as CandidateProfile;
+        const profData = (await fetchMyProfileWithMigration(user.uid)) as CandidateProfile | null;
+        if (profData) {
           setProfile(profData);
           setSmsNumber(profData.data?.mobile || mobile || '');
 
