@@ -84,10 +84,10 @@ export const BD_DISTRICTS: readonly District[] = Object.freeze([
   },
   {
     id: "10",
-    name: "Bogra",
+    name: "Bogura",
     upazilas: Object.freeze([
       { id: "45", name: "Adamdighi" },
-      { id: "43", name: "Bogra Sadar" },
+      { id: "43", name: "Bogura Sadar" },
       { id: "47", name: "Dhunat" },
       { id: "48", name: "Dhupchanchia" },
       { id: "44", name: "Gabtali" },
