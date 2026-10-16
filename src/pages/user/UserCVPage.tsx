@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../services/firebase';
 import { getFile, deleteFile, getFileId } from '../../services/files';
+import { fetchMyProfileWithMigration, saveMyProfile, deleteMyProfile } from '../../services/profileStore';
 import { CandidateProfile, ProfileData } from '../../types';
 import { PersonalInfoSection } from '../../components/cv/PersonalInfoSection';
 import { IdentitySection } from '../../components/cv/IdentitySection';
@@ -36,11 +35,9 @@ export const UserCVPage: React.FC = () => {
     if (!user) return;
     const loadProfile = async () => {
       try {
-        const docRef = doc(db, 'profiles', user.uid);
-        const snap = await getDoc(docRef);
+        const profile = (await fetchMyProfileWithMigration(user.uid)) as CandidateProfile | null;
 
-        if (snap.exists()) {
-          const profile = snap.data() as CandidateProfile;
+        if (profile) {
           setFormData(profile.data || {});
           const hasP = Boolean(profile.hasPhoto || profile.photoPath || profile.photoUrl);
           const hasS = Boolean(profile.hasSignature || profile.signaturePath || profile.signatureUrl);
@@ -198,11 +195,10 @@ export const UserCVPage: React.FC = () => {
         experienceComputer: formData.experienceComputer || 'No',
         experienceSatlipi: formData.experienceSatlipi || 'No',
         customFields: formData.customFields || [],
-        photoDataUrl: photoUrl || undefined,
-        signatureDataUrl: signatureUrl || undefined,
       };
 
-      const profilePayload: CandidateProfile = {
+      // ছবি ও স্বাক্ষর প্রোফাইলে যায় না, আলাদা ফাইল হিসেবে সেভ থাকে
+      const profilePayload = {
         schemaVersion: 1,
         data: finalData,
         presentDistrict: finalData.presentDistrict,
@@ -210,17 +206,17 @@ export const UserCVPage: React.FC = () => {
         mobile: finalData.mobile,
         hasPhoto: Boolean(hasPhoto || photoUrl),
         hasSignature: Boolean(hasSignature || signatureUrl),
-        photoUrl: photoUrl || '',
-        signatureUrl: signatureUrl || '',
-        updatedAt: serverTimestamp(),
+        photoUrl: '',
+        signatureUrl: '',
+        updatedAt: new Date().toISOString(),
       };
 
-      await setDoc(doc(db, 'profiles', user.uid), profilePayload, { merge: true });
+      await saveMyProfile(profilePayload);
       invalidateCache('user_');
-      success('সিভি সফলভাবে সংরক্ষিত হয়েছে!');
+      success('সিভি সফলভাবে সংরক্ষিত হয়েছে!');
     } catch (err: any) {
       console.error('CV save error:', err);
-      error(err?.message || 'সিভি সংরক্ষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
+      error(err?.message || 'সিভি সংরক্ষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
     } finally {
       setSaving(false);
     }
@@ -230,7 +226,7 @@ export const UserCVPage: React.FC = () => {
     if (!user) return;
     setDeleting(true);
     try {
-      await deleteDoc(doc(db, 'profiles', user.uid));
+      await deleteMyProfile();
       try {
         await deleteFile(getFileId.photo(user.uid));
         await deleteFile(getFileId.signature(user.uid));
@@ -248,10 +244,10 @@ export const UserCVPage: React.FC = () => {
       setHasPhoto(false);
       setHasSignature(false);
       setDeleteModalOpen(false);
-      success('আপনার সিভি মুছে ফেলা হয়েছে।');
+      success('আপনার সিভি মুছে ফেলা হয়েছে।');
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.DELETE, `profiles/${user.uid}`);
-      error('সিভি মুছে ফেলা সম্ভব হয়নি।');
+      console.error('CV delete error:', err);
+      error(err?.message || 'সিভি মুছে ফেলা সম্ভব হয়নি।');
     } finally {
       setDeleting(false);
     }
@@ -290,12 +286,12 @@ export const UserCVPage: React.FC = () => {
         onPhotoUploaded={(dataUrl) => {
           setPhotoUrl(dataUrl);
           setHasPhoto(true);
-          success('ছবি সফলভাবে আপলোড হয়েছে!');
+          success('ছবি সফলভাবে আপলোড হয়েছে!');
         }}
         onSignatureUploaded={(dataUrl) => {
           setSignatureUrl(dataUrl);
           setHasSignature(true);
-          success('স্বাক্ষর সফলভাবে আপলোড হয়েছে!');
+          success('স্বাক্ষর সফলভাবে আপলোড হয়েছে!');
         }}
       />
 
@@ -330,7 +326,7 @@ export const UserCVPage: React.FC = () => {
             <span>সতর্কতা: এই কাজটি পূর্বাবস্থায় ফিরিয়ে আনা যাবে না!</span>
           </div>
           <p>
-            আপনি নিশ্চিত যে আপনার সংরক্ষিত সকল সিভি তথ্য ও আপলোড করা ছবি/স্বাক্ষর মুছে ফেলতে চান? পরবর্তী সময়ে চাকরির আবেদনের জন্য আপনাকে নতুন করে সব তথ্য পূরণ করতে হবে।
+            আপনি নিশ্চিত যে আপনার সংরক্ষিত সকল সিভি তথ্য ও আপলোড করা ছবি/স্বাক্ষর মুছে ফেলতে চান? পরবর্তী সময়ে চাকরির আবেদনের জন্য আপনাকে নতুন করে সব তথ্য পূরণ করতে হবে।
           </p>
         </div>
       </Modal>
