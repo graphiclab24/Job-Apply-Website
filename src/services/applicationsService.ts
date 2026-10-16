@@ -1,4 +1,6 @@
 import { JobApplication, ApplicationStatus } from '../types';
+import { auth } from './firebase';
+import { WORKER_URL } from './jobsStore';
 
 export interface SubmitApplicationPayload {
   id: string;
@@ -42,12 +44,12 @@ export async function submitJobApplication(payload: SubmitApplicationPayload): P
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, error: data.error || 'আবেদন জমা দিতে সমস্যা হয়েছে' };
+      return { success: false, error: data.error || 'আবেদন জমা দিতে সমস্যা হয়েছে' };
     }
 
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
+    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
   }
 }
 
@@ -78,17 +80,26 @@ export async function fetchApplications(params?: {
 }
 
 /**
- * Fetch candidate's own applications
+ * Fetch candidate's own applications (D1 থেকে, Firebase ID token দিয়ে)
+ * uid প্যারামিটার আর ব্যবহার হয় না: সার্ভার টোকেন থেকে নিজের আবেদন দেয়।
  */
-export async function fetchUserApplications(uid: string): Promise<JobApplication[]> {
-  if (!uid) return [];
+export async function fetchUserApplications(_uid?: string): Promise<JobApplication[]> {
   try {
-    const res = await fetch(`/api/applications/my?uid=${encodeURIComponent(uid)}`);
-    if (res.ok) {
-      const data = await res.json();
-      return Array.isArray(data.applications) ? data.applications : [];
+    const u = auth.currentUser;
+    if (!u) return [];
+    const token = await u.getIdToken();
+
+    const res = await fetch(`${WORKER_URL}/api/applications/my`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      console.warn('User applications HTTP error:', res.status);
+      return [];
     }
-    return [];
+    const data = await res.json();
+    const items: any[] = Array.isArray(data.items) ? data.items : [];
+    return items.map((item) => ({ ...item, uid: u.uid })) as JobApplication[];
   } catch (err) {
     console.warn('Failed to fetch user applications:', err);
     return [];
@@ -172,11 +183,11 @@ export async function testAppsScriptWebhook(
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, error: data.error || 'Webhook টেস্ট ব্যর্থ হয়েছে' };
+      return { success: false, error: data.error || 'Webhook টেস্ট ব্যর্থ হয়েছে' };
     }
     return { success: true, message: data.message };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
+    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
   }
 }
 
@@ -205,13 +216,13 @@ export async function syncApplicationsToGoogleSheets(): Promise<{
       data = JSON.parse(text);
     } catch {
       if (res.ok) {
-        return { success: true, count: 0, message: 'সিঙ্ক সফল হয়েছে।' };
+        return { success: true, count: 0, message: 'সিঙ্ক সফল হয়েছে।' };
       }
       return { success: false, error: 'সার্ভার থেকে অপ্রত্যাশিত রেসপন্স এসেছে (' + text.slice(0, 80) + ')' };
     }
 
     if (!res.ok || !data.success) {
-      return { success: false, error: data.error || 'গুগল শিট সিঙ্ক ব্যর্থ হয়েছে' };
+      return { success: false, error: data.error || 'গুগল শিট সিঙ্ক ব্যর্থ হয়েছে' };
     }
     return {
       success: true,
@@ -220,6 +231,6 @@ export async function syncApplicationsToGoogleSheets(): Promise<{
       message: data.message,
     };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
+    return { success: false, error: err?.message || 'সার্ভারে কানেক্ট করা যায়নি' };
   }
 }
