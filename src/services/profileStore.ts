@@ -1,4 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { WORKER_URL } from './jobsStore';
 
@@ -16,6 +16,21 @@ function stripMedia(profile: any): any {
   return { ...profile, data: rest, photoUrl: '', signatureUrl: '' };
 }
 
+// পুরনো সংরক্ষিত মান নতুন নামে: Bogra -> Bogura, Non Quota -> Not Applicable
+export function normalizeProfileData(profile: any): any {
+  if (!profile || !profile.data) return profile;
+  const d: any = { ...profile.data };
+  for (const key of Object.keys(d)) {
+    const k = key.toLowerCase();
+    if ((k.includes('district') || k.includes('upazila')) && typeof d[key] === 'string') {
+      d[key] = d[key].replace(/\bBogra\b/g, 'Bogura');
+    }
+  }
+  if (d.quota === 'Non Quota') d.quota = 'Not Applicable';
+  if (!d.depStatus) d.depStatus = 'Not Applicable';
+  return { ...profile, data: d };
+}
+
 /** নিজের প্রোফাইল (R2 থেকে) */
 export async function fetchMyProfile(): Promise<any | null> {
   const res = await fetch(`${WORKER_URL}/profile/me`, {
@@ -24,7 +39,8 @@ export async function fetchMyProfile(): Promise<any | null> {
   });
   if (!res.ok) throw new Error(`প্রোফাইল লোড ব্যর্থ (HTTP ${res.status})`);
   const data = await res.json();
-  return data && Object.keys(data).length > 0 ? data : null;
+  if (!data || Object.keys(data).length === 0) return null;
+  return normalizeProfileData(data);
 }
 
 /** নিজের প্রোফাইল সংরক্ষণ */
@@ -47,19 +63,38 @@ export async function deleteMyProfile(): Promise<void> {
   if (!res.ok) throw new Error(`সিভি মুছতে ব্যর্থ (HTTP ${res.status})`);
 }
 
+const CHECKED_KEY = (uid: string) => `profile_legacy_checked_${uid}`;
+
 /**
- * নিজের প্রোফাইল পড়া। R2-তে না থাকলে পুরনো Firestore থেকে একবার নিয়ে R2-তে রাখা।
+ * নিজের প্রোফাইল পড়া।
+ * R2-তে না থাকলে পুরনো Firestore থেকে একবার নিয়ে R2-তে রাখা হয়,
+ * তারপর Firestore থেকে পুরনো ডকুমেন্ট মোছা হয়।
  */
 export async function fetchMyProfileWithMigration(uid: string): Promise<any | null> {
   const fromR2 = await fetchMyProfile();
   if (fromR2) return fromR2;
 
+  // আগে একবার দেখা হয়েছে এবং Firestore-এ কিছু ছিল না: আর পড়বে না
   try {
-    const snap = await getDoc(doc(db, 'profiles', uid));
-    if (!snap.exists()) return null;
+    if (localStorage.getItem(CHECKED_KEY(uid))) return null;
+  } catch {
+    // localStorage না থাকলে চালিয়ে যাও
+  }
+
+  try {
+    const ref = doc(db, 'profiles', uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      try {
+        localStorage.setItem(CHECKED_KEY(uid), '1');
+      } catch {}
+      return null;
+    }
+
     const legacy = stripMedia(snap.data());
-    await saveMyProfile(legacy);
-    return legacy;
+    await saveMyProfile(legacy); // আগে R2-তে সেভ
+    await deleteDoc(ref); // তারপর Firestore থেকে মোছা (সফল হলে আর পড়া লাগবে না)
+    return normalizeProfileData(legacy);
   } catch (err) {
     console.warn('Profile migration skipped:', err);
     return null;
@@ -75,12 +110,12 @@ export async function fetchProfileAsAdmin(uid: string): Promise<any | null> {
   if (res.status === 403) throw new Error('এই তথ্য দেখার অনুমতি নেই');
   if (res.ok) {
     const data = await res.json();
-    if (data && Object.keys(data).length > 0) return data;
+    if (data && Object.keys(data).length > 0) return normalizeProfileData(data);
   }
 
   try {
     const snap = await getDoc(doc(db, 'profiles', uid));
-    return snap.exists() ? snap.data() : null;
+    return snap.exists() ? normalizeProfileData(snap.data()) : null;
   } catch {
     return null;
   }
