@@ -75,7 +75,8 @@ export const UserCVPage: React.FC = () => {
             mobileConfirm: mobile || '',
             nationality: 'Bangladeshi',
             nidType: 'Yes',
-            quota: 'Non Quota',
+            quota: 'Not Applicable',
+            depStatus: 'Not Applicable',
           });
         }
       } catch (err) {
@@ -141,9 +142,9 @@ export const UserCVPage: React.FC = () => {
         mobile: formData.mobile || '',
         mobileConfirm: formData.mobileConfirm || '',
         email: formData.email || '',
-        quota: formData.quota || 'Non Quota',
+        quota: formData.quota || 'Not Applicable',
         quotaDetails: formData.quotaDetails || '',
-        depStatus: formData.depStatus || '',
+        depStatus: formData.depStatus || 'Not Applicable',
         presentCareOf: formData.presentCareOf || '',
         presentAddress: formData.presentAddress || '',
         presentDistrict: formData.presentDistrict || '',
