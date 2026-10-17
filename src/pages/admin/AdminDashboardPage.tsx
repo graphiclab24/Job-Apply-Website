@@ -1,16 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  collection,
-  query,
-  where,
-  getCountFromServer,
-  getDocs,
-  limit,
-} from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { getCached, setCached } from '../../services/cache';
-import { fetchJobsList } from '../../services/jobsStore';
+import { fetchJobsList, WORKER_URL } from '../../services/jobsStore';
+import { auth } from '../../services/firebase';
 import { JobApplication } from '../../types';
 import {
   Clock,
@@ -29,7 +21,7 @@ import {
   Check,
 } from 'lucide-react';
 
-// ড্যাশবোর্ড সংখ্যা ৩০ মিনিট পর্যন্ত একই থাকবে (Firestore read বাঁচাতে)
+// ড্যাশবোর্ড সংখ্যা ৩০ মিনিট পর্যন্ত একই থাকবে
 const DASHBOARD_CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const AdminDashboardPage: React.FC = () => {
@@ -56,59 +48,50 @@ export const AdminDashboardPage: React.FC = () => {
   const fetchAdminStats = async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
-      // 1. জবের সংখ্যা R2 থেকে (Firestore read লাগে না)
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('লগইন প্রয়োজন');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      // ১. আবেদনের সংখ্যা D1 থেকে (ছোট ৭টি সারি)
+      const statsRes = await fetch(`${WORKER_URL}/api/admin/stats`, { headers, cache: 'no-store' });
+      const s: Record<string, number> = statsRes.ok ? (await statsRes.json()).stats || {} : {};
+
+      // ২. জবের সংখ্যা R2 থেকে
       let jobsTotal = 0;
+      let jobsList: any[] = [];
       try {
-        const allJobs = await fetchJobsList(true);
-        jobsTotal = allJobs.length;
+        jobsList = await fetchJobsList(true);
+        jobsTotal = jobsList.length;
       } catch {
-        // জবের সংখ্যা না পেলে 0 দেখাবে
+        // জবের সংখ্যা না পেলে 0
       }
 
-      // 2. আবেদনের সংখ্যা Firestore থেকে (আবেদন ব্যবহারকারীর ডেটা, তাই এখনো Firestore-এ)
-      const [
-        waitingCountSnap,
-        applyNowCountSnap,
-        checkingCountSnap,
-        correctionCountSnap,
-        paymentNowCountSnap,
-        completeCountSnap,
-        rejectedCountSnap,
-      ] = await Promise.all([
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'waiting'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'apply_now'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'checking'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'correction'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'payment_now'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'applied'))),
-        getCountFromServer(query(collection(db, 'applications'), where('status', '==', 'rejected'))),
-      ]);
-
       const updatedCounts = {
-        waiting: waitingCountSnap.data().count,
-        applyNow: applyNowCountSnap.data().count,
-        checking: checkingCountSnap.data().count + correctionCountSnap.data().count,
-        paymentNow: paymentNowCountSnap.data().count,
-        complete: completeCountSnap.data().count,
-        rejected: rejectedCountSnap.data().count,
+        waiting: s.waiting || 0,
+        applyNow: s.apply_now || 0,
+        checking: (s.checking || 0) + (s.correction || 0),
+        paymentNow: s.payment_now || 0,
+        complete: s.applied || 0,
+        rejected: s.rejected || 0,
         jobsTotal,
       };
-
       setCounts(updatedCounts);
       setCached('admin_dashboard_counts', updatedCounts);
 
-      // Targeted query for urgent active items (limit 5)
-      const urgentSnap = await getDocs(
-        query(
-          collection(db, 'applications'),
-          where('status', 'in', ['waiting', 'apply_now', 'payment_now']),
-          limit(5)
-        )
+      // ৩. জরুরি পেন্ডিং আবেদন (সর্বোচ্চ ৫টি)
+      const urgentRes = await fetch(
+        `${WORKER_URL}/api/admin/applications?status=waiting,apply_now,payment_now&limit=5`,
+        { headers, cache: 'no-store' }
       );
-
-      const list = urgentSnap.docs.map((d) => ({ id: d.id, ...d.data() } as JobApplication));
-      setUrgentApps(list);
-      setCached('admin_dashboard_urgent', list);
+      if (urgentRes.ok) {
+        const data = await urgentRes.json();
+        const list = (data.items || []).map((i: any) => ({
+          ...i,
+          jobTitle: jobsList.find((j: any) => j.id === i.jobId)?.title || '',
+        })) as JobApplication[];
+        setUrgentApps(list);
+        setCached('admin_dashboard_urgent', list);
+      }
     } catch (e: any) {
       console.warn('Notice fetching admin counts:', e?.message || e);
     } finally {
@@ -118,7 +101,7 @@ export const AdminDashboardPage: React.FC = () => {
   };
 
   useEffect(() => {
-    // ক্যাশ ৩০ মিনিট পর্যন্ত বৈধ থাকলে নতুন করে Firestore পড়বে না
+    // ক্যাশ ৩০ মিনিট পর্যন্ত বৈধ থাকলে নতুন করে আনা হবে না
     const fresh = getCached<any>('admin_dashboard_counts', DASHBOARD_CACHE_TTL_MS);
     if (fresh) {
       setLoading(false);
