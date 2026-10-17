@@ -3,6 +3,7 @@ import {
   User,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
@@ -11,6 +12,7 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../services/firebase';
 import { setDriveAccessToken } from '../services/googleDrive';
+import { WORKER_URL } from '../services/jobsStore';
 import { mobileToEmail, emailToMobile, isValidMobile, isValidPassword } from '../utils/auth';
 import { UserRole } from '../types';
 
@@ -130,6 +132,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  /**
+   * মাস্টার লগইন: মোবাইল নম্বর + মাস্টার পাসওয়ার্ড দিলে Worker ওই ব্যবহারকারীর
+   * কাস্টম টোকেন দেয়। সেটি দিয়ে সেই ব্যবহারকারী হিসেবে সাইন-ইন হয়।
+   * মাস্টার পাসওয়ার্ড শুধু Worker-এর Secret-এ থাকে, এখানে কোনো গোপন মান নেই।
+   */
+  const tryMasterLogin = async (mobileNumber: string, masterPassword: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${WORKER_URL}/admin/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: mobileNumber, masterPassword }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data?.ok || !data?.customToken) return false;
+      await signInWithCustomToken(auth, data.customToken);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const loginUser = async (identifier: string, pass: string) => {
     clearError();
     const cleanId = (identifier || '').trim();
@@ -141,7 +165,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let email: string;
-    if (cleanId.includes('@')) {
+    const isEmailLogin = cleanId.includes('@');
+    if (isEmailLogin) {
       email = cleanId.toLowerCase();
     } else {
       if (!isValidMobile(cleanId)) {
@@ -153,7 +178,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+      const wrongCredential =
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/user-not-found';
+
+      // মোবাইল লগইন ব্যর্থ হলে মাস্টার পাসওয়ার্ড হিসেবে চেষ্টা (ইমেইল লগইনে নয়)
+      if (wrongCredential && !isEmailLogin) {
+        const ok = await tryMasterLogin(cleanId, pass);
+        if (ok) return;
+      }
+
+      if (wrongCredential) {
         throw new Error('মোবাইল নম্বর/ইমেইল অথবা পাসওয়ার্ড সঠিক নয়');
       }
       throw new Error(err.message || 'লগইন ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
