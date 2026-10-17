@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getCached, setCached } from '../../services/cache';
-import { CandidateProfile, JobApplication } from '../../types';
-import { FileText, Clock, CheckCircle, CreditCard, CheckCheck, ArrowRight, User } from 'lucide-react';
+import { fetchUserApplications } from '../../services/applicationsService';
+import { CandidateProfile } from '../../types';
+import { FileText, Clock, CheckCircle, CreditCard, CheckCheck, ArrowRight } from 'lucide-react';
 
 export const UserDashboardPage: React.FC = () => {
   const { user, mobile } = useAuth();
@@ -35,16 +36,14 @@ export const UserDashboardPage: React.FC = () => {
 
     const fetchUserData = async () => {
       try {
-        // Fetch CV profile
+        // CV profile (এখনো Firestore; পরের ধাপে R2-তে যাবে)
         const profRef = doc(db, 'profiles', user.uid);
         const profPromise = getDoc(profRef);
 
-        // Fetch application counts
-        const appRef = collection(db, 'applications');
-        const q = query(appRef, where('uid', '==', user.uid));
-        const appPromise = getDocs(q);
+        // আবেদন D1 থেকে (Firestore নয়)
+        const appPromise = fetchUserApplications();
 
-        const [profSnap, appSnap] = await Promise.all([profPromise, appPromise]);
+        const [profSnap, apps] = await Promise.all([profPromise, appPromise]);
 
         if (!isMounted) return;
 
@@ -59,8 +58,7 @@ export const UserDashboardPage: React.FC = () => {
         let p = 0;
         let a = 0;
 
-        appSnap.docs.forEach((docItem) => {
-          const app = docItem.data() as JobApplication;
+        apps.forEach((app: any) => {
           if (app.status === 'waiting') w++;
           else if (app.status === 'checking' || app.status === 'apply_now' || app.status === 'correction') c++;
           else if (app.status === 'payment_now') p++;
@@ -103,7 +101,7 @@ export const UserDashboardPage: React.FC = () => {
             {profile?.data?.fullName || `মোবাইল: ${mobile}`}
           </h2>
           <p className="text-xs text-emerald-100/80 mt-1">
-            আপনার চাকরি আবেদন সার্ভিসের নিয়ন্ত্রণ কেন্দ্র
+            আপনার চাকরি আবেদন সার্ভিসের নিয়ন্ত্রণ কেন্দ্র
           </p>
         </div>
 
@@ -144,8 +142,8 @@ export const UserDashboardPage: React.FC = () => {
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{counts.waiting}</div>
-          <p className="text-[11px] text-gray-400 mt-1">যাচাইয়ের অপেক্ষায়</p>
+          <div className="text-2xl font-bold text-gray-900">{loading ? '…' : counts.waiting}</div>
+          <p className="text-[11px] text-gray-400 mt-1">যাচাইয়ের অপেক্ষায়</p>
         </Link>
 
         <Link
@@ -158,7 +156,7 @@ export const UserDashboardPage: React.FC = () => {
               <CheckCircle className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{counts.checking}</div>
+          <div className="text-2xl font-bold text-gray-900">{loading ? '…' : counts.checking}</div>
           <p className="text-[11px] text-gray-400 mt-1">সফট কপি চেক করুন</p>
         </Link>
 
@@ -172,7 +170,7 @@ export const UserDashboardPage: React.FC = () => {
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{counts.paymentNow}</div>
+          <div className="text-2xl font-bold text-gray-900">{loading ? '…' : counts.paymentNow}</div>
           <p className="text-[11px] text-gray-400 mt-1">টেলিটক ফি পরিশোধ বাকি</p>
         </Link>
 
@@ -186,7 +184,7 @@ export const UserDashboardPage: React.FC = () => {
               <CheckCheck className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{counts.applied}</div>
+          <div className="text-2xl font-bold text-gray-900">{loading ? '…' : counts.applied}</div>
           <p className="text-[11px] text-gray-400 mt-1">পেইড কপি রেডি</p>
         </Link>
       </div>
