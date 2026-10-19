@@ -24,6 +24,7 @@ import { RegisterPage } from './pages/public/RegisterPage';
 const NotFoundPage = lazy(() => import('./pages/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const SitemapView = lazy(() => import('./pages/public/SitemapView').then((m) => ({ default: m.SitemapView })));
 const RobotsView = lazy(() => import('./pages/public/RobotsView').then((m) => ({ default: m.RobotsView })));
+const ForgotPasswordPage = lazy(() => import('./pages/public/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 
 // Lazy Loaded User Pages
 const UserDashboardPage = lazy(() => import('./pages/user/UserDashboardPage').then((m) => ({ default: m.UserDashboardPage })));
@@ -32,6 +33,7 @@ const UserApplicationsPage = lazy(() => import('./pages/user/UserApplicationsPag
 const UserNotificationsPage = lazy(() => import('./pages/user/UserNotificationsPage').then((m) => ({ default: m.UserNotificationsPage })));
 const ApplyJobPage = lazy(() => import('./pages/user/ApplyJobPage').then((m) => ({ default: m.ApplyJobPage })));
 const ApplicationPaymentPage = lazy(() => import('./pages/user/ApplicationPaymentPage').then((m) => ({ default: m.ApplicationPaymentPage })));
+const ChangePasswordPage = lazy(() => import('./pages/user/ChangePasswordPage').then((m) => ({ default: m.ChangePasswordPage })));
 
 // Lazy Loaded Admin Pages (Heavy editors, Google Drive, and tables isolated from public visitors)
 const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })));
@@ -73,6 +75,7 @@ export default function App() {
                     <Route path="/jobs/:slug" element={<JobDetailsPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   </Route>
 
                   {/* SEO Endpoints (Raw XML / Robots / Google Verification) */}
@@ -97,6 +100,7 @@ export default function App() {
                   >
                     <Route path="/dashboard" element={<UserDashboardPage />} />
                     <Route path="/cv" element={<UserCVPage />} />
+                    <Route path="/change-password" element={<ChangePasswordPage />} />
                     <Route path="/apply/:jobId" element={<ApplyJobPage />} />
                     <Route path="/apply/:jobId/payment" element={<ApplicationPaymentPage />} />
                     <Route path="/applications/:status" element={<UserApplicationsPage />} />
