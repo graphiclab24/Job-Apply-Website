@@ -2,6 +2,7 @@ import { getCached, setCached } from './cache';
 import { JobCategory } from '../types';
 import { DEFAULT_FEED_JOBS } from '../data/defaultJobs';
 import { R2_BASE } from './jobsStore';
+import { sortJobsByDeadline } from '../utils/jobSort';
 
 export interface FeedJobSummary {
   id: string;
@@ -37,8 +38,9 @@ export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummar
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data?.posts) && data.posts.length > 0) {
-        setCached(CACHE_KEY, data.posts);
-        return data.posts;
+        const sorted = sortJobsByDeadline(data.posts);
+        setCached(CACHE_KEY, sorted);
+        return sorted;
       }
     } catch {
       // পরের source-এ যাও
