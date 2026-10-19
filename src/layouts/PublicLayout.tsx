@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { Briefcase, Menu, X, User, LogIn, ArrowRight, LogOut } from 'lucide-react';
+import { Briefcase, Menu, X, User, LogIn, ArrowRight, LogOut, Phone, MessageCircle, Facebook } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+const HELPLINE = '01771522503';
+const FACEBOOK_URL = 'https://www.facebook.com/bdjobapply.site';
 
 export const PublicLayout: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -180,7 +183,7 @@ export const PublicLayout: React.FC = () => {
                 <span className="font-bold text-white text-base">চাকরি আবেদন সার্ভিস</span>
               </div>
               <p className="text-xs text-gray-400 leading-relaxed">
-                সরকারি ও বেসরকারি চাকরির নির্ভুল অনলাইন আবেদন সেবা। আপনার সময় ও ঝামেলা বাঁচাতে অভিজ্ঞ টিম দ্বারা আবেদন ফর্ম পূরণ ও জমা দেওয়া হয়।
+                সরকারি ও বেসরকারি চাকরির নির্ভুল অনলাইন আবেদন সেবা। আপনার সময় ও ঝামেলা বাঁচাতে অভিজ্ঞ টিম দ্বারা আবেদন ফর্ম পূরণ ও জমা দেওয়া হয়।
               </p>
             </div>
 
@@ -194,10 +197,43 @@ export const PublicLayout: React.FC = () => {
             </div>
 
             <div>
-              <h4 className="text-white font-semibold mb-3 text-sm">সতর্কবার্তা ও তথ্য</h4>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                এই প্ল্যাটফর্মটি কোনো সরকারি বা প্রাতিষ্ঠানিক অফিশিয়াল ওয়েবসাইট নয়। এটি চাকরিপ্রার্থীদের হয়ে অনলাইনে আবেদনপত্র পূরণের একটি সহায়ক সেবা মাত্র।
+              <h4 className="text-white font-semibold mb-3 text-sm">যোগাযোগ ও তথ্য</h4>
+              <p className="text-xs text-gray-400 leading-relaxed mb-3">
+                এই প্ল্যাটফর্মটি কোনো সরকারি বা প্রাতিষ্ঠানিক অফিশিয়াল ওয়েবসাইট নয়। এটি চাকরিপ্রার্থীদের হয়ে অনলাইনে আবেদনপত্র পূরণের একটি সহায়ক সেবা মাত্র।
               </p>
+              <p className="text-xs text-gray-400 mb-3">
+                ২৪/৭ হেল্পলাইনে যোগাযোগ করুন।
+              </p>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <a href={`tel:${HELPLINE}`} className="inline-flex items-center gap-2 hover:text-emerald-400">
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>অফিশিয়াল হেল্পলাইন: {HELPLINE}</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={`https://wa.me/88${HELPLINE}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 hover:text-emerald-400"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp: {HELPLINE}</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={FACEBOOK_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 hover:text-emerald-400"
+                  >
+                    <Facebook className="w-3.5 h-3.5" />
+                    <span>Facebook Page</span>
+                  </a>
+                </li>
+              </ul>
             </div>
           </div>
 
