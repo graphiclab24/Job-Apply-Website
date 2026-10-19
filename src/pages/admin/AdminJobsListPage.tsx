@@ -10,14 +10,15 @@ import { useToast } from '../../components/common/Toast';
 import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import { safeFormatBnDate } from '../../utils/dateUtils';
+import { sortJobsByDeadline } from '../../utils/jobSort';
 import { Plus, Edit, Trash2, ExternalLink, Send } from 'lucide-react';
 
 export const AdminJobsListPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobCircular[]>(() => {
     const cached = getCached<JobCircular[]>('admin_jobs') || [];
     const clean = cached.filter((j) => !isDummyJob(j));
-    if (clean.length > 0) return clean;
-    return DEFAULT_JOBS.filter((j) => !isDummyJob(j));
+    if (clean.length > 0) return sortJobsByDeadline(clean);
+    return sortJobsByDeadline(DEFAULT_JOBS.filter((j) => !isDummyJob(j)));
   });
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -29,14 +30,15 @@ export const AdminJobsListPage: React.FC = () => {
     try {
       const list = await fetchJobsList(true);
       const clean = list.filter((j: any) => !isDummyJob(j)) as JobCircular[];
-      setJobs(clean);
-      setCached('admin_jobs', clean);
-      clean.forEach(precacheJob);
+      const sorted = sortJobsByDeadline(clean);
+      setJobs(sorted);
+      setCached('admin_jobs', sorted);
+      sorted.forEach(precacheJob);
     } catch (err) {
       console.warn('Jobs fetch failed:', err);
       const cached = getCached<JobCircular[]>('admin_jobs');
       if (cached && cached.length > 0) {
-        setJobs(cached.filter((j) => !isDummyJob(j)));
+        setJobs(sortJobsByDeadline(cached.filter((j) => !isDummyJob(j))));
       }
       error('তালিকা নতুন করে লোড করা যায়নি, সংরক্ষিত তালিকা দেখানো হচ্ছে');
     } finally {
@@ -68,13 +70,19 @@ export const AdminJobsListPage: React.FC = () => {
     }
   };
 
+  const now = Date.now();
+  const isExpiredJob = (j: JobCircular) => {
+    const t = j.deadline ? new Date(j.deadline as any).getTime() : NaN;
+    return !isNaN(t) && t < now;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">চাকরির সার্কুলার ব্যবস্থাপনা</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            নতুন চাকরির নিয়োগ বিজ্ঞপ্তি তৈরি, প্রকাশ ও নিয়ন্ত্রণ করুন
+            চলমান সার্কুলার আগে, মেয়াদ শেষ সার্কুলার সবার নিচে • নতুন তৈরি, প্রকাশ ও নিয়ন্ত্রণ করুন
           </p>
         </div>
 
@@ -113,73 +121,86 @@ export const AdminJobsListPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {jobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="p-3.5 max-w-sm">
-                      <span className="font-bold text-gray-900 block line-clamp-1">{job.title}</span>
-                      <span className="text-[11px] text-gray-500">
-                        {job.category} • পদের সংখ্যা: {job.posts?.length || 0}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      <span
-                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          job.status === 'published'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : job.status === 'scheduled'
-                            ? 'bg-sky-50 text-sky-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {job.status === 'published'
-                          ? 'Published'
-                          : job.status === 'scheduled'
-                          ? 'Scheduled'
-                          : 'Draft'}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-gray-600 whitespace-nowrap">
-                      {safeFormatBnDate(job.deadline, 'নির্ধারিত নয়')}
-                    </td>
-                    <td className="p-3.5">
-                      {job.applyServiceEnabled ? (
-                        <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                          <Send className="w-3.5 h-3.5" />
-                          <span>চালু (৳{(job.applicationFee || 0) + (job.serviceCharge || 0)})</span>
+                {jobs.map((job) => {
+                  const expired = isExpiredJob(job);
+                  return (
+                    <tr
+                      key={job.id}
+                      className={`transition-colors ${expired ? 'bg-gray-50/60 text-gray-500' : 'hover:bg-gray-50/70'}`}
+                    >
+                      <td className="p-3.5 max-w-sm">
+                        <span className="font-bold text-gray-900 block line-clamp-1">{job.title}</span>
+                        <span className="text-[11px] text-gray-500">
+                          {job.category} • পদের সংখ্যা: {job.posts?.length || 0}
                         </span>
-                      ) : (
-                        <span className="text-gray-400">বন্ধ</span>
-                      )}
-                    </td>
-                    <td className="p-3.5 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link
-                          to={`/jobs/${job.slug || job.id}`}
-                          target="_blank"
-                          className="p-1.5 text-gray-500 hover:text-emerald-600 rounded-lg hover:bg-gray-100"
-                          title="পাবলিক ভিউ"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </Link>
-                        <Link
-                          to={`/admin/jobs/edit/${job.id}`}
-                          className="p-1.5 text-sky-600 hover:text-sky-800 rounded-lg hover:bg-sky-50"
-                          title="এডিট"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(job.id, job.title)}
-                          disabled={deletingId === job.id}
-                          className="p-1.5 text-rose-600 hover:text-rose-800 rounded-lg hover:bg-rose-50 disabled:opacity-50"
-                          title="মুছুন"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              job.status === 'published'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : job.status === 'scheduled'
+                                ? 'bg-sky-50 text-sky-700'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {job.status === 'published'
+                              ? 'Published'
+                              : job.status === 'scheduled'
+                              ? 'Scheduled'
+                              : 'Draft'}
+                          </span>
+                          {expired && (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">
+                              মেয়াদ শেষ
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        {safeFormatBnDate(job.deadline, 'নির্ধারিত নয়')}
+                      </td>
+                      <td className="p-3.5">
+                        {job.applyServiceEnabled ? (
+                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                            <Send className="w-3.5 h-3.5" />
+                            <span>চালু (৳{(job.applicationFee || 0) + (job.serviceCharge || 0)})</span>
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">বন্ধ</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/jobs/${job.slug || job.id}`}
+                            target="_blank"
+                            className="p-1.5 text-gray-500 hover:text-emerald-600 rounded-lg hover:bg-gray-100"
+                            title="পাবলিক ভিউ"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </Link>
+                          <Link
+                            to={`/admin/jobs/edit/${job.id}`}
+                            className="p-1.5 text-sky-600 hover:text-sky-800 rounded-lg hover:bg-sky-50"
+                            title="এডিট"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Link>
+                          <button
+                            onClick={() => handleDelete(job.id, job.title)}
+                            disabled={deletingId === job.id}
+                            className="p-1.5 text-rose-600 hover:text-rose-800 rounded-lg hover:bg-rose-50 disabled:opacity-50"
+                            title="মুছুন"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
