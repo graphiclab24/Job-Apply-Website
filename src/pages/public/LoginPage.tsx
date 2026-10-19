@@ -45,10 +45,10 @@ export const LoginPage: React.FC = () => {
     setGoogleLoading(true);
     try {
       await loginWithGoogle();
-      success('Google অ্যাকাউন্ট দিয়ে সফলভাবে লগইন হয়েছে!');
+      success('Google অ্যাকাউন্ট দিয়ে সফলভাবে লগইন হয়েছে!');
       navigate(from, { replace: true });
     } catch (err: any) {
-      setLocalError(err.message || 'Google দিয়ে লগইন ব্যর্থ হয়েছে');
+      setLocalError(err.message || 'Google দিয়ে লগইন ব্যর্থ হয়েছে');
     } finally {
       setGoogleLoading(false);
     }
@@ -61,10 +61,10 @@ export const LoginPage: React.FC = () => {
 
     try {
       await loginUser(identifier, password);
-      success('সফলভাবে লগইন হয়েছে!');
+      success('সফলভাবে লগইন হয়েছে!');
       navigate(from, { replace: true });
     } catch (err: any) {
-      setLocalError(err.message || 'লগইন ব্যর্থ হয়েছে');
+      setLocalError(err.message || 'লগইন ব্যর্থ হয়েছে');
     } finally {
       setLoading(false);
     }
@@ -79,7 +79,7 @@ export const LoginPage: React.FC = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-900">ইউজার লগইন</h2>
           <p className="text-xs text-gray-500 mt-1">
-            আপনার নিবন্ধিত মোবাইল নম্বর বা ইমেইল ও পাসওয়ার্ড দিয়ে প্রবেশ করুন
+            আপনার নিবন্ধিত মোবাইল নম্বর বা ইমেইল ও পাসওয়ার্ড দিয়ে প্রবেশ করুন
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export const LoginPage: React.FC = () => {
           <GoogleSignInButton
             onClick={handleGoogleLogin}
             loading={googleLoading}
-            text="Google দিয়ে ১-ক্লিকে লগইন"
+            text="Google দিয়ে ১-ক্লিকে লগইন"
             className="w-full"
           />
         </div>
@@ -118,14 +118,20 @@ export const LoginPage: React.FC = () => {
           />
 
           <Input
-            label="পাসওয়ার্ড"
+            label="পাসওয়ার্ড"
             type="password"
-            placeholder="কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড"
+            placeholder="কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             requiredStar
             disabled={loading}
           />
+
+          <div className="text-right -mt-2">
+            <Link to="/forgot-password" className="text-xs text-emerald-700 hover:underline">
+              পাসওয়ার্ড ভুলে গেছেন?
+            </Link>
+          </div>
 
           <Button
             type="submit"
