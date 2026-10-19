@@ -174,7 +174,7 @@ export const PublicLayout: React.FC = () => {
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-400 text-sm mt-12 border-t border-gray-800">
         <div className="max-w-6xl mx-auto px-4 py-10">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-white">
@@ -195,45 +195,40 @@ export const PublicLayout: React.FC = () => {
                 <li><Link to="/register" className="hover:text-emerald-400">নতুন অ্যাকাউন্ট তৈরি</Link></li>
               </ul>
             </div>
+          </div>
 
-            <div>
-              <h4 className="text-white font-semibold mb-3 text-sm">যোগাযোগ ও তথ্য</h4>
-              <p className="text-xs text-gray-400 leading-relaxed mb-3">
-                এই প্ল্যাটফর্মটি কোনো সরকারি বা প্রাতিষ্ঠানিক অফিশিয়াল ওয়েবসাইট নয়। এটি চাকরিপ্রার্থীদের হয়ে অনলাইনে আবেদনপত্র পূরণের একটি সহায়ক সেবা মাত্র।
-              </p>
-              <p className="text-xs text-gray-400 mb-3">
-                ২৪/৭ হেল্পলাইনে যোগাযোগ করুন।
-              </p>
-              <ul className="space-y-2 text-xs">
-                <li>
-                  <a href={`tel:${HELPLINE}`} className="inline-flex items-center gap-2 hover:text-emerald-400">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>অফিশিয়াল হেল্পলাইন: {HELPLINE}</span>
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={`https://wa.me/88${HELPLINE}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 hover:text-emerald-400"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>WhatsApp: {HELPLINE}</span>
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href={FACEBOOK_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 hover:text-emerald-400"
-                  >
-                    <Facebook className="w-3.5 h-3.5" />
-                    <span>Facebook Page</span>
-                  </a>
-                </li>
-              </ul>
+          {/* যোগাযোগ: শুধু রঙিন আইকন */}
+          <div className="mb-8">
+            <h4 className="text-white font-semibold mb-4 text-sm">যোগাযোগ</h4>
+            <div className="flex items-center gap-4">
+              <a
+                href={`https://wa.me/88${HELPLINE}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="WhatsApp"
+                title="WhatsApp"
+                className="w-12 h-12 rounded-full bg-[#25D366] hover:scale-110 transition-transform flex items-center justify-center text-white shadow-lg"
+              >
+                <MessageCircle className="w-6 h-6" />
+              </a>
+              <a
+                href={`tel:${HELPLINE}`}
+                aria-label="অফিশিয়াল হেল্পলাইন"
+                title="অফিশিয়াল হেল্পলাইন"
+                className="w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 hover:scale-110 transition-transform flex items-center justify-center text-white shadow-lg"
+              >
+                <Phone className="w-6 h-6" />
+              </a>
+              <a
+                href={FACEBOOK_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook Page"
+                title="Facebook Page"
+                className="w-12 h-12 rounded-full bg-[#1877F2] hover:scale-110 transition-transform flex items-center justify-center text-white shadow-lg"
+              >
+                <Facebook className="w-6 h-6" />
+              </a>
             </div>
           </div>
 
