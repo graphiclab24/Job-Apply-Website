@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Search, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,6 +7,7 @@ import { JobCircular } from '../../types';
 import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import { isDummyJob } from '../../utils/recoverLocalJobs';
 import { safeFormatBnDate, isJobExpired } from '../../utils/dateUtils';
+import { sortJobsByDeadline } from '../../utils/jobSort';
 import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 import { fetchJobsList } from '../../services/jobsStore';
@@ -34,7 +35,7 @@ export const JobsPage: React.FC = () => {
 
   const ALL_JOBS_KEY = 'jobs_all';
 
-  // সব জব একবার লোড করে ক্যাশ করা হয়; ফিল্টার ও পেজিং ব্রাউজারে হয়
+  // সব জব একবার লোড করে ক্যাশ করা হয়; ফিল্টার, সাজানো ও পেজিং ব্রাউজারে হয়
   const loadAllJobs = async (bypassCache: boolean): Promise<JobCircular[]> => {
     if (!bypassCache) {
       const cached = getCached<JobCircular[]>(ALL_JOBS_KEY);
@@ -80,6 +81,9 @@ export const JobsPage: React.FC = () => {
 
         return matchesSearch && matchesCategory;
       });
+
+      // চলমান আগে, মেয়াদ শেষ সবার নিচে
+      list = sortJobsByDeadline(list);
 
       const start = (page - 1) * ITEMS_PER_PAGE;
       setJobs(list.slice(start, start + ITEMS_PER_PAGE));
@@ -167,11 +171,9 @@ export const JobsPage: React.FC = () => {
       </Helmet>
 
       <div className="border-b border-gray-200 pb-4">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-          সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি
-        </h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">সকল চাকরির খবর ও নিয়োগ বিজ্ঞপ্তি</h1>
         <p className="text-xs text-gray-500 mt-1">
-          পৃষ্ঠা {currentPage} • প্রতি পেজে ২০টি করে বিজ্ঞপ্তি (কোটা সাশ্রয়ী পেজিনেশন)
+          পাতা {currentPage} • প্রতি পেজে ২০টি বিজ্ঞপ্তি • চলমান বিজ্ঞপ্তি আগে, মেয়াদ শেষ সবার নিচে
         </p>
       </div>
 
@@ -266,7 +268,9 @@ export const JobsPage: React.FC = () => {
                   precacheJob(job);
                   prefetchJobDetail(job.slug || job.id);
                 }}
-                className="bg-white rounded-xl border border-gray-200 p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
+                className={`bg-white rounded-xl border p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between ${
+                  isExpired ? 'border-gray-200 opacity-70' : 'border-gray-200'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -274,7 +278,7 @@ export const JobsPage: React.FC = () => {
                       {job.category === 'govt' ? 'সরকারি' : 'অন্যান্য'}
                     </span>
                     {isExpired ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">
                         মেয়াদ শেষ
                       </span>
                     ) : (
@@ -299,9 +303,7 @@ export const JobsPage: React.FC = () => {
                 <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                    <span>
-                      শেষ: {safeFormatBnDate(job.deadline)}
-                    </span>
+                    <span>শেষ: {safeFormatBnDate(job.deadline)}</span>
                   </div>
                   <span className="font-semibold text-emerald-700">আবেদন করুন →</span>
                 </div>
