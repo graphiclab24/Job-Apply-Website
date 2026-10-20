@@ -29,7 +29,7 @@ import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../../context/AuthContext';
 import { formatJobContent } from '../../utils/formatJobContent';
-import { fetchJobsList } from '../../services/jobsStore';
+import { fetchJobsList, fetchArchivedJob } from '../../services/jobsStore';
 
 export const JobDetailsPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -89,9 +89,14 @@ export const JobDetailsPage: React.FC = () => {
           j.id === slug ||
           (j.slug && decodeURIComponent(j.slug) === decodedSlug);
 
-        // R2 jobs.json → same-origin /jobs.json (কোনো /api বা Firestore নেই)
+        // ১. চলমান তালিকা (R2 jobs.json)
         const list = await fetchJobsList();
-        const resolved: any = list.find(matches) || DEFAULT_JOBS.find(matches);
+        let resolved: any = list.find(matches) || DEFAULT_JOBS.find(matches);
+
+        // ২. না পেলে মেয়াদ শেষ সার্কুলার আর্কাইব থেকে (Google থেকে আসা পুরনো লিংক)
+        if (!resolved) {
+          resolved = await fetchArchivedJob(slug);
+        }
 
         if (resolved && !isCancelled) {
           setCached(cacheKey, resolved);
@@ -168,6 +173,7 @@ export const JobDetailsPage: React.FC = () => {
     );
   }
 
+  const isArchived = Boolean((job as any).archived);
   const now = new Date();
 
   // Bulletproof date parser to prevent RangeError: Invalid time value
@@ -315,6 +321,16 @@ export const JobDetailsPage: React.FC = () => {
         <ArrowLeft className="w-4 h-4" />
         <span>সকল চাকরিতে ফিরে যান</span>
       </Link>
+
+      {isArchived && (
+        <div className="p-3.5 bg-gray-100 border border-gray-200 rounded-xl text-xs text-gray-700 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+          <span>
+            এই বিজ্ঞপ্তির আবেদনের সময় শেষ হয়েছে। তথ্যের জন্য এটি সংরক্ষিত আছে। চলমান বিজ্ঞপ্তি দেখতে{' '}
+            <Link to="/jobs" className="font-bold text-emerald-700 hover:underline">সকল চাকরি</Link> পাতায় যান।
+          </span>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8 space-y-6 shadow-xs">
         {/* Top Header */}
