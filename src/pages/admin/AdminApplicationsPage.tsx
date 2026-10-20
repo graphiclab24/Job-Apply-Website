@@ -8,17 +8,17 @@ import { Spinner } from '../../components/common/Spinner';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useToast } from '../../components/common/Toast';
 import { ApplicationCardItem } from '../../components/admin/ApplicationCardItem';
+import { TeletalkCredentialsModal } from '../../components/admin/TeletalkCredentialsModal';
 import {
   RejectModal,
   UploadSoftCopyModal,
   CompletePaidModal,
   AutofillModal,
 } from '../../components/admin/ApplicationActionModals';
-import { ChevronLeft, ChevronRight, RefreshCw, Search, Download, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Download, AlertTriangle, CheckCircle2, KeyRound } from 'lucide-react';
 
 const PAGE_SIZE = 10;
 
-// পাইপলাইন ধাপ -> D1 স্ট্যাটাস
 const STEP_STATUSES: Record<string, string> = {
   waiting: 'waiting',
   'apply-now': 'apply_now',
@@ -68,8 +68,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 
-// ডেডলাইন ব্যাজ: ২ দিনের মধ্যে লাল, পার হলে "মেয়াদ শেষ"
-const DeadlineBadge: React.FC<{ deadline?: string | null; status?: string }> = ({ deadline, status }) => {
+const DeadlineBadge: React.FC<{ deadline?: string | null }> = ({ deadline }) => {
   if (!deadline) {
     return (
       <span className="inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-500">
@@ -124,8 +123,8 @@ export const AdminApplicationsPage: React.FC = () => {
   const [softOpen, setSoftOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [autofillOpen, setAutofillOpen] = useState(false);
+  const [credsOpen, setCredsOpen] = useState(false);
 
-  // ধাপ বদলালে ১ম পাতা ও খোঁজা রিসেট
   useEffect(() => {
     setPage(1);
     setQ('');
@@ -219,7 +218,6 @@ export const AdminApplicationsPage: React.FC = () => {
     }
   };
 
-  // বাতিল করলে আবেদন ক্যান্সেল (রিফান্ড বাকি) তালিকায় যাবে
   const handleCancelConfirm = async (reason: string) => {
     if (!activeApp) return;
     try {
@@ -234,7 +232,6 @@ export const AdminApplicationsPage: React.FC = () => {
     }
   };
 
-  // রিফান্ড সম্পন্ন: আবেদন বাতিলকৃত (rejected) তালিকায় যাবে
   const handleRefundDone = async (app: any) => {
     setBusyId(app.id);
     try {
@@ -282,6 +279,10 @@ export const AdminApplicationsPage: React.FC = () => {
     } catch (err: any) {
       error(err?.message || 'পেইড কপি সংরক্ষণ করতে সমস্যা হয়েছে');
     }
+  };
+
+  const handleCredsSaved = (id: string, creds: { teletalkUser: string; teletalkPassword: string }) => {
+    setItems((prev) => prev.map((a) => (a.id === id ? { ...a, ...creds } : a)));
   };
 
   const handleOpenAutofill = async (app: any) => {
@@ -431,12 +432,18 @@ export const AdminApplicationsPage: React.FC = () => {
               } ${busyId === app.id ? 'opacity-60 pointer-events-none' : ''}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <DeadlineBadge deadline={app.deadline} status={app.status} />
-                <span className="font-mono text-[11px] text-gray-500">{app.id}</span>
+                <DeadlineBadge deadline={app.deadline} />
+                <div className="flex items-center gap-2">
+                  {app.teletalkUser && (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                      Teletalk ✓
+                    </span>
+                  )}
+                  <span className="font-mono text-[11px] text-gray-500">{app.id}</span>
+                </div>
               </div>
 
               {isRefundTab ? (
-                // ক্যান্সেল ট্যাব: রিফান্ডের জন্য তথ্য
                 <div className="space-y-3">
                   <div className="text-sm font-bold text-gray-900">
                     {app.fullName || 'নাম নেই'} • {app.postName}
@@ -479,23 +486,38 @@ export const AdminApplicationsPage: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <ApplicationCardItem
-                  app={app}
-                  onReject={(a: any) => {
-                    setActiveApp(a);
-                    setRejectOpen(true);
-                  }}
-                  onVerifyPayment={handleVerifyPayment}
-                  onOpenAutofill={handleOpenAutofill}
-                  onOpenSoftCopyModal={(a: any) => {
-                    setActiveApp(a);
-                    setSoftOpen(true);
-                  }}
-                  onOpenCompleteModal={(a: any) => {
-                    setActiveApp(a);
-                    setCompleteOpen(true);
-                  }}
-                />
+                <>
+                  <ApplicationCardItem
+                    app={app}
+                    onReject={(a: any) => {
+                      setActiveApp(a);
+                      setRejectOpen(true);
+                    }}
+                    onVerifyPayment={handleVerifyPayment}
+                    onOpenAutofill={handleOpenAutofill}
+                    onOpenSoftCopyModal={(a: any) => {
+                      setActiveApp(a);
+                      setSoftOpen(true);
+                    }}
+                    onOpenCompleteModal={(a: any) => {
+                      setActiveApp(a);
+                      setCompleteOpen(true);
+                    }}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveApp(app);
+                        setCredsOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-xs font-semibold"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Teletalk তথ্য {app.teletalkUser ? '(সম্পাদনা)' : 'যোগ করুন'}</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           ))}
@@ -550,6 +572,12 @@ export const AdminApplicationsPage: React.FC = () => {
         onClose={() => setAutofillOpen(false)}
         app={activeApp}
         profile={activeProfile}
+      />
+      <TeletalkCredentialsModal
+        isOpen={credsOpen}
+        onClose={() => setCredsOpen(false)}
+        app={activeApp}
+        onSaved={handleCredsSaved}
       />
     </div>
   );
