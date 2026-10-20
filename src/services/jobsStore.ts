@@ -6,8 +6,8 @@ const isPublished = (j: any) => j && j.status !== 'draft';
 
 /**
  * জবের তালিকা পড়া।
- * fresh = false (পাবলিক): R2 → same-origin /jobs.json, ড্রাফট বাদ
- * fresh = true (অ্যাডমিন): শুধু R2, ক্যাশ ছাড়া, সব জব (ড্রাফটসহ)
+ * fresh = false (পাবলিক): R2 → same-origin /jobs.json, ড্রাফট বাদ। এতে শুধু চলমান সার্কুলার থাকে।
+ * fresh = true (অ্যাডমিন): শুধু R2, ক্যাশ ছাড়া, চলমান সব জব (ড্রাফটসহ)
  */
 export async function fetchJobsList(fresh = false): Promise<any[]> {
   const sources = fresh
@@ -31,6 +31,42 @@ export async function fetchJobsList(fresh = false): Promise<any[]> {
   return [];
 }
 
+/**
+ * মেয়াদ শেষ সার্কুলার আর্কাইব থেকে আনা।
+ * প্রথমে সূচক (slug, id, মাস), তারপর ঐ মাসের ফাইল থেকে পুরো সার্কুলার।
+ * না পেলে null।
+ */
+export async function fetchArchivedJob(slugOrId: string): Promise<any | null> {
+  const candidates = Array.from(new Set([slugOrId, safeDecode(slugOrId)]));
+  try {
+    const idxRes = await fetch(`${R2_BASE}/jobs/archive/index.json`);
+    if (!idxRes.ok) return null;
+    const index = await idxRes.json();
+    if (!Array.isArray(index)) return null;
+
+    const entry = index.find((e: any) => candidates.includes(e.slug) || candidates.includes(e.id));
+    if (!entry || !entry.month) return null;
+
+    const monthRes = await fetch(`${R2_BASE}/jobs/archive/${entry.month}.json`);
+    if (!monthRes.ok) return null;
+    const list = await monthRes.json();
+    if (!Array.isArray(list)) return null;
+
+    const job = list.find((j: any) => j.id === entry.id);
+    return job ? { ...job, archived: true } : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
 export function getAdminToken(): string {
   let token = sessionStorage.getItem(TOKEN_KEY) || '';
   if (!token) {
@@ -42,7 +78,7 @@ export function getAdminToken(): string {
 
 const toTime = (v: any) => new Date(v || 0).getTime() || 0;
 
-/** পুরো জবের তালিকা Worker-এ পাঠায় (R2 jobs.json ও feed.json আপডেট হয়) */
+/** পুরো জবের তালিকা Worker-এ পাঠায় (চলমান ও আর্কাইব ভাগ হয়) */
 async function postAllJobs(all: any[]): Promise<void> {
   const token = getAdminToken();
   const res = await fetch(`${WORKER_URL}/admin/jobs/save`, {
@@ -89,7 +125,7 @@ export async function saveJobToWorker(job: Record<string, any>): Promise<void> {
   await postAllJobs(all);
 }
 
-/** একটি জব মুছে বাকি তালিকা Worker-এ পাঠায় */
+/** একটি চলমান জব মুছে বাকি তালিকা Worker-এ পাঠায় */
 export async function deleteJobInWorker(id: string): Promise<void> {
   const current = await fetchJobsList(true);
   const remaining = current.filter((j) => j.id !== id);
