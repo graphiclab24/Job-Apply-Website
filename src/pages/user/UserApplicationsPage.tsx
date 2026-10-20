@@ -10,6 +10,8 @@ import { useToast } from '../../components/common/Toast';
 import { UserApplicationCard } from '../../components/user/UserApplicationCard';
 import { fetchUserApplications } from '../../services/applicationsService';
 import { reviewMyApplication } from '../../services/applicationReview';
+import { downloadOrOpenFile, getFileId } from '../../services/files';
+import { KeyRound, Eye, EyeOff, Copy, FileText, ExternalLink, Download } from 'lucide-react';
 
 // ট্যাব -> যে স্ট্যাটাসগুলো দেখাবে
 const TAB_STATUSES: Record<string, string[]> = {
@@ -17,6 +19,138 @@ const TAB_STATUSES: Record<string, string[]> = {
   checking: ['checking', 'apply_now', 'correction'],
   'payment-now': ['payment_now'],
   applied: ['applied'],
+};
+
+// আবেদনের Teletalk তথ্য ও কপি (অ্যাডমিন সেভ করলে দেখাবে)
+const CredentialsBlock: React.FC<{ app: any }> = ({ app }) => {
+  const [showPass, setShowPass] = useState(false);
+  const { success } = useToast();
+
+  const hasAny =
+    app.teletalkUser ||
+    app.teletalkPassword ||
+    app.softCopyDriveUrl ||
+    app.hasSoftCopy ||
+    app.paidCopyDriveUrl ||
+    app.hasPaidCopy;
+  if (!hasAny) return null;
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    success('কপি হয়েছে');
+  };
+
+  const download = async (kind: 'soft' | 'paid') => {
+    try {
+      const id = kind === 'soft' ? getFileId.softcopy(app.id) : getFileId.paidcopy(app.id);
+      await downloadOrOpenFile(id, `${app.id}_${kind === 'soft' ? 'soft' : 'paid'}.pdf`, 'download');
+    } catch (err: any) {
+      alert(err?.message || 'ফাইল পাওয়া যায়নি');
+    }
+  };
+
+  return (
+    <div className="mt-3 p-4 bg-emerald-50/60 border border-emerald-200 rounded-xl space-y-3 text-xs">
+      <div className="font-bold text-emerald-900 flex items-center gap-1.5">
+        <KeyRound className="w-4 h-4" />
+        <span>আবেদনের তথ্য</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <span className="text-gray-500">পদ:</span> <strong>{app.postName}</strong>
+        </div>
+        <div>
+          <span className="text-gray-500">প্রতিষ্ঠান / বিজ্ঞপ্তি:</span>{' '}
+          <strong>{app.jobTitle || '—'}</strong>
+        </div>
+      </div>
+
+      {app.teletalkUser && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-gray-500">Teletalk ইউজার:</span>
+          <strong className="font-mono">{app.teletalkUser}</strong>
+          <button
+            type="button"
+            onClick={() => copy(app.teletalkUser)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-300 rounded text-[11px] font-semibold"
+          >
+            <Copy className="w-3 h-3" /> কপি
+          </button>
+        </div>
+      )}
+
+      {app.teletalkPassword && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-gray-500">পাসওয়ার্ড:</span>
+          <strong className="font-mono">{showPass ? app.teletalkPassword : '••••••••'}</strong>
+          <button
+            type="button"
+            onClick={() => setShowPass((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-300 rounded text-[11px] font-semibold"
+          >
+            {showPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            {showPass ? 'লুকান' : 'দেখুন'}
+          </button>
+          <button
+            type="button"
+            onClick={() => copy(app.teletalkPassword)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-300 rounded text-[11px] font-semibold"
+          >
+            <Copy className="w-3 h-3" /> কপি
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        {(app.softCopyDriveUrl || app.hasSoftCopy) && (
+          <>
+            {app.softCopyDriveUrl ? (
+              <a
+                href={app.softCopyDriveUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-sky-300 text-sky-800 rounded-lg font-semibold"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> সফট কপি (Drive)
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => download('soft')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-sky-300 text-sky-800 rounded-lg font-semibold"
+              >
+                <FileText className="w-3.5 h-3.5" /> সফট কপি PDF
+              </button>
+            )}
+          </>
+        )}
+
+        {(app.paidCopyDriveUrl || app.hasPaidCopy) && (
+          <>
+            {app.paidCopyDriveUrl ? (
+              <a
+                href={app.paidCopyDriveUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> পেইড কপি (Drive)
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => download('paid')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold"
+              >
+                <Download className="w-3.5 h-3.5" /> পেইড কপি PDF ডাউনলোড
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export const UserApplicationsPage: React.FC = () => {
@@ -39,7 +173,6 @@ export const UserApplicationsPage: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
-      // আবেদন D1 থেকে (Firestore নয়)
       const all = await fetchUserApplications();
       const list = all
         .filter((a: any) => currentStatuses.includes(a.status))
@@ -57,7 +190,6 @@ export const UserApplicationsPage: React.FC = () => {
     fetchApps();
   }, [user, status]);
 
-  // সফট কপি সঠিক: Payment Now ধাপে যাবে
   const handleApproveSoftCopy = async (app: JobApplication) => {
     if (!window.confirm('আপনি কি নিশ্চিত যে সফট কপির সকল তথ্য ঠিক আছে?')) return;
     setUpdatingId(app.id);
@@ -72,7 +204,6 @@ export const UserApplicationsPage: React.FC = () => {
     fetchApps();
   };
 
-  // সংশোধন নোট: Correction ধাপে যাবে
   const handleRequestCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedApp || !correctionNote.trim()) {
@@ -113,7 +244,7 @@ export const UserApplicationsPage: React.FC = () => {
     },
     applied: {
       title: 'Applied Job (সম্পন্ন আবেদন)',
-      desc: 'আবেদন সম্পূর্ণ হয়েছে! এখান থেকে আপনার অফিসিয়াল পেইড কপি ডাউনলোড করুন।',
+      desc: 'আবেদন সম্পূর্ণ হয়েছে! এখান থেকে আপনার Teletalk তথ্য ও অফিসিয়াল পেইড কপি দেখুন।',
     },
   };
 
@@ -143,16 +274,18 @@ export const UserApplicationsPage: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {apps.map((app) => (
-            <UserApplicationCard
-              key={app.id}
-              app={app}
-              updatingId={updatingId}
-              onApproveSoftCopy={handleApproveSoftCopy}
-              onOpenCorrectionModal={(a) => {
-                setSelectedApp(a);
-                setCorrectionModalOpen(true);
-              }}
-            />
+            <div key={app.id}>
+              <UserApplicationCard
+                app={app}
+                updatingId={updatingId}
+                onApproveSoftCopy={handleApproveSoftCopy}
+                onOpenCorrectionModal={(a) => {
+                  setSelectedApp(a);
+                  setCorrectionModalOpen(true);
+                }}
+              />
+              <CredentialsBlock app={app} />
+            </div>
           ))}
         </div>
       )}
