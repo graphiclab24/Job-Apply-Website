@@ -14,6 +14,31 @@ import { Select } from '../../components/common/Select';
 import { Spinner } from '../../components/common/Spinner';
 import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 
+// সংখ্যা নিরাপদে পড়া: "500" → 500, খালি/ভুল মান → null
+const toNum = (v: any): number | null => {
+  if (v === '' || v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+// পদ-ভিত্তিক ফি, না থাকলে জব-ভিত্তিক ফি। ফি অজানা হলে app = null (০ ধরা হয় না)
+const getFees = (job: any, post: any) => {
+  const app = toNum(post?.applicationFee) ?? toNum(job?.applicationFee);
+  const svc = toNum(post?.serviceCharge) ?? toNum(job?.serviceCharge) ?? 10;
+  return { app, svc, total: app == null ? null : app + svc };
+};
+
+// জব লোড: আগে ক্যাশ ছাড়া R2 (পুরনো jobs.json এড়াতে), ব্যর্থ হলে সাধারণ পথ। ড্রাফট বাদ।
+const loadJob = async (idOrSlug: string): Promise<any | null> => {
+  let list: any[] = [];
+  try {
+    list = (await fetchJobsList(true)).filter((j: any) => j && j.status !== 'draft');
+  } catch {
+    list = await fetchJobsList();
+  }
+  return list.find((j: any) => j.id === idOrSlug || j.slug === idOrSlug) || null;
+};
+
 export const ApplyJobPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const { user, mobile } = useAuth();
@@ -36,8 +61,7 @@ export const ApplyJobPage: React.FC = () => {
     const fetchData = async () => {
       try {
         // জব R2 থেকে (আইডি বা স্লাগ দিয়ে খোঁজা হয়)
-        const list = await fetchJobsList();
-        const found = list.find((j: any) => j.id === jobId || j.slug === jobId);
+        const found = await loadJob(jobId);
         if (found) {
           setJob(found as JobCircular);
         }
@@ -103,6 +127,8 @@ export const ApplyJobPage: React.FC = () => {
   if (profile?.data?.masExam) availableEducation.push('স্নাতকোত্তর / সমমান');
 
   const selectedPostObj = job.posts?.find((p) => p.name === selectedPostName);
+  const fees = getFees(job, selectedPostObj);
+  const feeMissing = Boolean(selectedPostObj) && fees.app == null;
 
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +144,10 @@ export const ApplyJobPage: React.FC = () => {
     }
     if (!isValidMobile(smsNumber)) {
       setLocalError('১১ ডিজিটের সঠিক মোবাইল নম্বর দিন');
+      return;
+    }
+    if (feeMissing) {
+      setLocalError('এই পদের আবেদন ফি নির্ধারিত নেই। অনুগ্রহ করে অ্যাডমিনকে জানান।');
       return;
     }
     if (!termsAccepted) {
@@ -149,16 +179,8 @@ export const ApplyJobPage: React.FC = () => {
       // আবেদন নম্বর সার্ভার (D1) তৈরি করে; এখানে অস্থায়ী আইডি
       const appId = `TMP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-      const appFee =
-        selectedPostObj?.applicationFee != null && !isNaN(selectedPostObj.applicationFee) && selectedPostObj.applicationFee >= 0
-          ? selectedPostObj.applicationFee
-          : (job.applicationFee || 0);
-
-      const sCharge =
-        selectedPostObj?.serviceCharge != null && !isNaN(selectedPostObj.serviceCharge) && selectedPostObj.serviceCharge >= 0
-          ? selectedPostObj.serviceCharge
-          : (job.serviceCharge != null && !isNaN(job.serviceCharge) ? job.serviceCharge : 10);
-
+      const appFee = fees.app as number;
+      const sCharge = fees.svc;
       const totalFee = appFee + sCharge;
 
       navigate(`/apply/${job.id}/payment`, {
@@ -268,24 +290,24 @@ export const ApplyJobPage: React.FC = () => {
               আপনার স্থায়ী জেলা: <strong>{candidateDistrict}</strong>। শুধুমাত্র অনুমোদিত পদেই আবেদন করতে পারবেন।
             </p>
 
-            {selectedPostObj && (() => {
-              const postAppFee = selectedPostObj.applicationFee != null && !isNaN(selectedPostObj.applicationFee) ? selectedPostObj.applicationFee : (job.applicationFee || 0);
-              const postServiceCharge = selectedPostObj.serviceCharge != null && !isNaN(selectedPostObj.serviceCharge) ? selectedPostObj.serviceCharge : (job.serviceCharge != null && !isNaN(job.serviceCharge) ? job.serviceCharge : 10);
-              const postTotal = postAppFee + postServiceCharge;
-
-              return (
+            {selectedPostObj && (
+              feeMissing ? (
+                <div className="mt-2.5 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                  এই পদের আবেদন ফি নির্ধারিত নেই। আবেদন করার আগে অ্যাডমিনকে জানান।
+                </div>
+              ) : (
                 <div className="mt-2.5 p-3 bg-emerald-50/90 border border-emerald-200 rounded-xl text-xs space-y-1">
                   <div className="font-bold text-emerald-900 flex items-center justify-between">
                     <span>নির্বাচিত পদের ফি বিবরণী:</span>
-                    <span className="text-sm font-extrabold text-emerald-800">মোট: ৳{postTotal}</span>
+                    <span className="text-sm font-extrabold text-emerald-800">মোট: ৳{fees.total}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-emerald-700 text-[11px] pt-0.5">
-                    <span>টেলিটক/সরকারি ফি: <strong>৳{postAppFee}</strong></span>
-                    <span>আমাদের সার্ভিস চার্জ: <strong>৳{postServiceCharge}</strong></span>
+                    <span>টেলিটক/সরকারি ফি: <strong>৳{fees.app}</strong></span>
+                    <span>আমাদের সার্ভিস চার্জ: <strong>৳{fees.svc}</strong></span>
                   </div>
                 </div>
-              );
-            })()}
+              )
+            )}
           </div>
 
           <Select
@@ -311,35 +333,19 @@ export const ApplyJobPage: React.FC = () => {
             <div>
               <span className="font-bold text-emerald-900 block text-sm">মোট প্রদেয় ফি:</span>
               <span className="text-emerald-800 text-xs">
-                {selectedPostObj ? (
-                  <>
-                    পদ: <strong>{selectedPostObj.name}</strong> (টেলিটক ফি: ৳
-                    {selectedPostObj.applicationFee != null && !isNaN(selectedPostObj.applicationFee)
-                      ? selectedPostObj.applicationFee
-                      : (job.applicationFee || 0)}{' '}
-                    + সার্ভিস চার্জ: ৳
-                    {selectedPostObj.serviceCharge != null && !isNaN(selectedPostObj.serviceCharge)
-                      ? selectedPostObj.serviceCharge
-                      : (job.serviceCharge != null && !isNaN(job.serviceCharge) ? job.serviceCharge : 10)}
-                    )
-                  </>
+                {!selectedPostObj ? (
+                  <>পদ নির্বাচন করলে সঠিক ফি প্রদর্শিত হবে (সার্ভিস চার্জ: ৳{fees.svc})</>
+                ) : feeMissing ? (
+                  <>ফি নির্ধারিত নেই</>
                 ) : (
-                  <>পদ নির্বাচন করলে সঠিক ফি প্রদর্শিত হবে (সার্ভিস চার্জ: ৳{job.serviceCharge != null ? job.serviceCharge : 10})</>
+                  <>
+                    পদ: <strong>{selectedPostObj.name}</strong> (টেলিটক ফি: ৳{fees.app} + সার্ভিস চার্জ: ৳{fees.svc})
+                  </>
                 )}
               </span>
             </div>
             <div className="text-xl font-extrabold text-emerald-900">
-              {(() => {
-                const curAppFee =
-                  selectedPostObj?.applicationFee != null && !isNaN(selectedPostObj.applicationFee)
-                    ? selectedPostObj.applicationFee
-                    : (job.applicationFee || 0);
-                const curServiceCharge =
-                  selectedPostObj?.serviceCharge != null && !isNaN(selectedPostObj.serviceCharge)
-                    ? selectedPostObj.serviceCharge
-                    : (job.serviceCharge != null && !isNaN(job.serviceCharge) ? job.serviceCharge : 10);
-                return `৳${curAppFee + curServiceCharge}`;
-              })()}
+              {selectedPostObj && !feeMissing ? `৳${fees.total}` : '—'}
             </div>
           </div>
 
@@ -355,7 +361,7 @@ export const ApplyJobPage: React.FC = () => {
             </span>
           </label>
 
-          <Button type="submit" className="w-full" loading={submitting} icon={<ArrowRight className="w-4 h-4" />}>
+          <Button type="submit" className="w-full" loading={submitting} disabled={feeMissing} icon={<ArrowRight className="w-4 h-4" />}>
             পেমেন্ট ও ভেরিফিকেশনে এগিয়ে যান
           </Button>
         </form>
