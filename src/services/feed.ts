@@ -23,6 +23,7 @@ const CACHE_KEY = 'feed_latest';
 
 /**
  * হোমপেজের ফিড: R2 feed.json → same-origin /feed.json → bundled fallback
+ * চলমান সার্কুলার আগে, মেয়াদ শেষ সবার নিচে।
  * Firestore ব্যবহার করা হয় না।
  */
 export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummary[]> {
@@ -38,7 +39,8 @@ export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummar
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data?.posts) && data.posts.length > 0) {
-        const sorted = sortJobsByDeadline(data.posts);
+        const posts = data.posts as FeedJobSummary[];
+        const sorted = sortJobsByDeadline<FeedJobSummary>(posts);
         setCached(CACHE_KEY, sorted);
         return sorted;
       }
@@ -47,8 +49,9 @@ export async function getFeedLatest(forceRefresh = false): Promise<FeedJobSummar
     }
   }
 
-  setCached(CACHE_KEY, DEFAULT_FEED_JOBS);
-  return DEFAULT_FEED_JOBS;
+  const fallback = sortJobsByDeadline<FeedJobSummary>(DEFAULT_FEED_JOBS as FeedJobSummary[]);
+  setCached(CACHE_KEY, fallback);
+  return fallback;
 }
 
 /**
