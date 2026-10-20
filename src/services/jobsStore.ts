@@ -71,9 +71,14 @@ export async function saveJobToWorker(job: Record<string, any>): Promise<void> {
   const current = await fetchJobsList(true);
   const existing = current.find((j) => j.id === job.id);
 
+  // undefined মান বাদ দিই, নইলে পুরনো ঠিক মান (যেমন applicationFee) মুছে যায়
+  const clean = Object.fromEntries(
+    Object.entries(job).filter(([, v]) => v !== undefined)
+  );
+
   const merged = {
     ...(existing || {}),
-    ...job,
+    ...clean,
     createdAt: existing?.createdAt || job.createdAt,
   };
 
