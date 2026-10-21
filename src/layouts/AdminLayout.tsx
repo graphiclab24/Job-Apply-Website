@@ -19,6 +19,7 @@ import {
   Link2,
   FileImage,
   FileSpreadsheet,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -39,6 +40,7 @@ export const AdminLayout: React.FC = () => {
         { to: '/admin', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, end: true },
         { to: '/admin/jobs', label: 'চাকরির সার্কুলার', icon: Briefcase },
         { to: '/admin/exams', label: 'পরীক্ষা ও নোটিশ', icon: Award },
+        { to: '/admin/prep', label: 'চাকরির প্রস্তুতি', icon: BookOpen },
       ],
     },
     {
@@ -178,7 +180,7 @@ export const AdminLayout: React.FC = () => {
               target="_blank"
               className="text-xs text-emerald-700 hover:underline font-medium hidden md:inline"
             >
-              পাবলিক ওয়েবসাইট দেখুন ↗
+              পাবলিক ওয়েবসাইট দেখুন ↗
             </Link>
 
             {/* Direct Autofill Extension Download Button in Admin Header */}
@@ -195,7 +197,7 @@ export const AdminLayout: React.FC = () => {
 
             <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>সক্রিয় অ্যাডমিন</span>
+              <span>সক্রিয় অ্যাডমিন</span>
             </div>
 
             {/* Prominent Header Logout Button */}
