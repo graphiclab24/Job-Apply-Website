@@ -11,8 +11,8 @@ import {
   LogOut,
   User,
   Home,
-  Menu,
-  X,
+  BookOpen,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getCountFromServer } from 'firebase/firestore';
@@ -24,7 +24,6 @@ const COUNT_TTL_MS = 5 * 60 * 1000;
 export const UserLayout: React.FC = () => {
   const { user, mobile, logout } = useAuth();
   const [unreadCount, setUnreadCount] = useState<number>(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -61,10 +60,12 @@ export const UserLayout: React.FC = () => {
     loadUnreadCount(onNotifications);
   }, [user, location.pathname, loadUnreadCount]);
 
+  // ডেস্কটপ মেনু
   const navItems = [
     { to: '/dashboard', label: 'ড্যাশবোর্ড', icon: Home },
     { to: '/cv', label: 'আমার সিভি', icon: FileText },
-    { to: '/applications/waiting', label: 'Waiting', icon: Clock },
+    { to: '/prep', label: 'চাকরির প্রস্তুতি', icon: BookOpen },
+    { to: '/applications/waiting', label: 'আমার আবেদন', icon: ClipboardList },
     { to: '/applications/checking', label: 'Check Application', icon: CheckCircle },
     { to: '/applications/payment-now', label: 'Payment Now', icon: CreditCard },
     { to: '/applications/applied', label: 'Applied Job', icon: CheckCheck },
@@ -159,11 +160,11 @@ export const UserLayout: React.FC = () => {
       </main>
 
       {/* Bottom Navigation for Mobile (Mobile-first Thumb access) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 px-2 py-1 shadow-lg flex justify-around items-center">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 px-1 py-1 shadow-lg flex justify-around items-center">
         <NavLink
           to="/dashboard"
           className={({ isActive }) =>
-            `flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-medium ${
+            `flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium ${
               isActive ? 'text-emerald-700' : 'text-gray-500'
             }`
           }
@@ -175,38 +176,50 @@ export const UserLayout: React.FC = () => {
         <NavLink
           to="/cv"
           className={({ isActive }) =>
-            `flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-medium ${
+            `flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium ${
               isActive ? 'text-emerald-700' : 'text-gray-500'
             }`
           }
         >
           <FileText className="w-5 h-5 mb-0.5" />
-          <span>আমার সিভি</span>
+          <span>সিভি</span>
+        </NavLink>
+
+        <NavLink
+          to="/prep"
+          className={({ isActive }) =>
+            `flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium ${
+              isActive ? 'text-emerald-700' : 'text-gray-500'
+            }`
+          }
+        >
+          <BookOpen className="w-5 h-5 mb-0.5" />
+          <span>প্রস্তুতি</span>
         </NavLink>
 
         <NavLink
           to="/applications/waiting"
           className={({ isActive }) =>
-            `flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-medium ${
+            `flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium ${
               isActive ? 'text-emerald-700' : 'text-gray-500'
             }`
           }
         >
-          <Clock className="w-5 h-5 mb-0.5" />
+          <ClipboardList className="w-5 h-5 mb-0.5" />
           <span>আবেদন</span>
         </NavLink>
 
         <NavLink
           to="/notifications"
           className={({ isActive }) =>
-            `relative flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-medium ${
+            `relative flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium ${
               isActive ? 'text-emerald-700' : 'text-gray-500'
             }`
           }
         >
           <Bell className="w-5 h-5 mb-0.5" />
           {unreadCount > 0 && (
-            <span className="absolute top-0 right-2 w-3.5 h-3.5 bg-rose-600 text-white rounded-full text-[9px] font-bold flex items-center justify-center">
+            <span className="absolute top-0 right-1 w-3.5 h-3.5 bg-rose-600 text-white rounded-full text-[9px] font-bold flex items-center justify-center">
               {unreadCount}
             </span>
           )}
@@ -215,7 +228,7 @@ export const UserLayout: React.FC = () => {
 
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-medium text-gray-500 hover:text-rose-600"
+          className="flex flex-col items-center py-1 px-1.5 rounded-lg text-[10px] font-medium text-gray-500 hover:text-rose-600"
         >
           <LogOut className="w-5 h-5 mb-0.5" />
           <span>লগআউট</span>
