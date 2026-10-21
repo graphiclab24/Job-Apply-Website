@@ -212,6 +212,22 @@ export const AdminJobFormPage: React.FC = () => {
           console.warn('Job load failed:', err);
         }
 
+                // চলমান তালিকায় না থাকলে আর্কাইব থেকে (মেয়াদ শেষ সার্কুলার সম্পাদনার জন্য)
+        if (!data) {
+          try {
+            const u = auth.currentUser;
+            if (u) {
+              const token = await u.getIdToken();
+              const r = await fetch(`${WORKER_URL}/api/admin/archive/${encodeURIComponent(id)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (r.ok) data = await r.json();
+            }
+          } catch (err) {
+            console.warn('Archive load failed:', err);
+          }
+        }
+
         if (data) {
           setTitle(data.title || '');
           setSlug(data.slug || '');
