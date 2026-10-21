@@ -34,6 +34,7 @@ const UserNotificationsPage = lazy(() => import('./pages/user/UserNotificationsP
 const ApplyJobPage = lazy(() => import('./pages/user/ApplyJobPage').then((m) => ({ default: m.ApplyJobPage })));
 const ApplicationPaymentPage = lazy(() => import('./pages/user/ApplicationPaymentPage').then((m) => ({ default: m.ApplicationPaymentPage })));
 const ChangePasswordPage = lazy(() => import('./pages/user/ChangePasswordPage').then((m) => ({ default: m.ChangePasswordPage })));
+const PrepPage = lazy(() => import('./pages/user/PrepPage').then((m) => ({ default: m.PrepPage })));
 
 // Lazy Loaded Admin Pages (Heavy editors, Google Drive, and tables isolated from public visitors)
 const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })));
@@ -106,6 +107,7 @@ export default function App() {
                     <Route path="/apply/:jobId/payment" element={<ApplicationPaymentPage />} />
                     <Route path="/applications/:status" element={<UserApplicationsPage />} />
                     <Route path="/notifications" element={<UserNotificationsPage />} />
+                    <Route path="/prep" element={<PrepPage />} />
                   </Route>
 
                   {/* Protected Admin Routes */}
