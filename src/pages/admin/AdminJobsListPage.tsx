@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getCached, setCached, precacheJob, invalidateCache } from '../../services/cache';
-import { fetchJobsList, deleteJobInWorker, R2_BASE } from '../../services/jobsStore';
+import { fetchJobsList, deleteJobInWorker, R2_BASE, WORKER_URL } from '../../services/jobsStore';
+import { auth } from '../../services/firebase';
 import { JobCircular } from '../../types';
 import { Button } from '../../components/common/Button';
 import { Spinner } from '../../components/common/Spinner';
@@ -43,6 +44,7 @@ export const AdminJobsListPage: React.FC = () => {
   const [monthJobs, setMonthJobs] = useState<Record<string, any[]>>({});
   const [monthLoading, setMonthLoading] = useState<Record<string, boolean>>({});
   const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveDeletingId, setArchiveDeletingId] = useState<string | null>(null);
 
   const { success, error } = useToast();
 
@@ -99,7 +101,7 @@ export const AdminJobsListPage: React.FC = () => {
     if (monthJobs[month]) return;
     setMonthLoading((p) => ({ ...p, [month]: true }));
     try {
-      const res = await fetch(`${R2_BASE}/jobs/archive/${month}.json`);
+      const res = await fetch(`${R2_BASE}/jobs/archive/${month}.json?t=${Date.now()}`, { cache: 'no-store' });
       const data = res.ok ? await res.json() : [];
       setMonthJobs((p) => ({ ...p, [month]: Array.isArray(data) ? data : [] }));
     } catch {
@@ -137,6 +139,32 @@ export const AdminJobsListPage: React.FC = () => {
       error(err?.message || 'বিজ্ঞপ্তি মুছতে ব্যর্থ হয়েছে');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // আর্কাইবের সার্কুলার মোছা (Worker-এর DELETE রুট)
+  const handleArchiveDelete = async (id: string, title: string, month: string) => {
+    if (!window.confirm(`আর্কাইব থেকে "${title}" স্থায়ীভাবে মুছে ফেলতে চান?`)) return;
+
+    setArchiveDeletingId(id);
+    try {
+      const u = auth.currentUser;
+      if (!u) throw new Error('লগইন প্রয়োজন');
+      const token = await u.getIdToken();
+
+      const res = await fetch(`${WORKER_URL}/api/admin/archive/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`মোছা যায়নি (HTTP ${res.status})`);
+
+      setMonthJobs((p) => ({ ...p, [month]: (p[month] || []).filter((j) => j.id !== id) }));
+      setArchiveIndex((p) => (p || []).filter((e) => e.id !== id));
+      success('আর্কাইব থেকে মুছে ফেলা হয়েছে');
+    } catch (err: any) {
+      error(err?.message || 'আর্কাইব থেকে মুছতে ব্যর্থ হয়েছে');
+    } finally {
+      setArchiveDeletingId(null);
     }
   };
 
@@ -328,7 +356,7 @@ export const AdminJobsListPage: React.FC = () => {
               className="flex-1 max-w-md px-3 py-2 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600"
             />
             <p className="text-[11px] text-gray-500">
-              মাসের তালিকায় ক্লিক করলে তখন সেই মাসের সার্কুলার আসবে। সম্পাদনা ও মোছা আর্কাইবে এখনো নেই।
+              মাসের তালিকায় ক্লিক করলে তখন সেই মাসের সার্কুলার আসবে। সম্পাদনায় শেষ তারিখ ভবিষ্যতে দিলে সার্কুলার আবার চলমানে ফিরবে।
             </p>
           </div>
 
@@ -343,6 +371,7 @@ export const AdminJobsListPage: React.FC = () => {
               {archiveGroups.map(([month, entries]) => {
                 const open = openMonths.has(month);
                 const loadedJobs = monthJobs[month];
+                const term = archiveSearch.trim().toLowerCase();
                 return (
                   <div key={month} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <button
@@ -370,30 +399,45 @@ export const AdminJobsListPage: React.FC = () => {
                                 <tr>
                                   <th className="p-3">শিরোনাম</th>
                                   <th className="p-3">শেষ তারিখ</th>
-                                  <th className="p-3 text-right">দেখুন</th>
+                                  <th className="p-3 text-right">অ্যাকশন</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
                                 {loadedJobs
-                                  .filter((j: any) => {
-                                    const term = archiveSearch.trim().toLowerCase();
-                                    return !term || (j.title || '').toLowerCase().includes(term) || (j.slug || '').toLowerCase().includes(term);
-                                  })
+                                  .filter((j: any) => !term || (j.title || '').toLowerCase().includes(term) || (j.slug || '').toLowerCase().includes(term))
                                   .map((j: any) => (
                                     <tr key={j.id} className="text-gray-600">
                                       <td className="p-3 font-semibold text-gray-800 max-w-md">
                                         <span className="line-clamp-1">{j.title}</span>
                                       </td>
                                       <td className="p-3 whitespace-nowrap">{safeFormatBnDate(j.deadline, 'নির্ধারিত নয়')}</td>
-                                      <td className="p-3 text-right">
-                                        <Link
-                                          to={`/jobs/${j.slug || j.id}`}
-                                          target="_blank"
-                                          className="inline-flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
-                                        >
-                                          <ExternalLink className="w-3.5 h-3.5" />
-                                          <span>পাবলিক ভিউ</span>
-                                        </Link>
+                                      <td className="p-3 text-right whitespace-nowrap">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <Link
+                                            to={`/jobs/${j.slug || j.id}`}
+                                            target="_blank"
+                                            className="p-1.5 text-gray-500 hover:text-emerald-600 rounded-lg hover:bg-gray-100"
+                                            title="পাবলিক ভিউ"
+                                          >
+                                            <ExternalLink className="w-4 h-4" />
+                                          </Link>
+                                          <Link
+                                            to={`/admin/jobs/edit/${j.id}`}
+                                            className="p-1.5 text-sky-600 hover:text-sky-800 rounded-lg hover:bg-sky-50"
+                                            title="এডিট"
+                                          >
+                                            <Edit className="w-4 h-4" />
+                                          </Link>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleArchiveDelete(j.id, j.title, month)}
+                                            disabled={archiveDeletingId === j.id}
+                                            className="p-1.5 text-rose-600 hover:text-rose-800 rounded-lg hover:bg-rose-50 disabled:opacity-50"
+                                            title="মুছুন"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
