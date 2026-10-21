@@ -9,6 +9,8 @@ import {
   FILE_LIMITS,
 } from '../../services/files';
 import { invalidateCache } from '../../services/cache';
+import { auth } from '../../services/firebase';
+import { WORKER_URL } from '../../services/jobsStore';
 import { fetchJobsList, saveJobToWorker } from '../../services/jobsStore';
 import { JobCircular, JobCategory, JobStatus, JobPostItem } from '../../types';
 import { Input } from '../../components/common/Input';
