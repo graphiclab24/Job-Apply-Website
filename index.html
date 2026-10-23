@@ -27,9 +27,11 @@
     <meta name="twitter:description" content="বাংলাদেশের সকল সরকারি ও টেলিটক চাকরির সর্বশেষ নিয়োগ বিজ্ঞপ্তি ও ঘরে বসে সরাসরি অনলাইন আবেদন সার্ভিস।" />
     <meta name="twitter:image" content="https://bdjobapply.site/og-image.jpg" />
 
+    <!-- অ্যাপের মতো ইনস্টল (PWA) -->
     <meta name="theme-color" content="#059669" />
-        <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="BDJobApply" />
 
@@ -66,9 +68,18 @@
       ]
     }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- সংযোগ আগে তৈরি: ফন্ট ও ফাইল হোস্ট -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://files.bdjobapply.site" crossorigin />
+
+    <!-- ফন্ট: শুধু ব্যবহৃত দুটি ওজন, swap (লেখা সাথে সাথে দেখাবে) -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
     <script>
       (function(){
         var redirect = sessionStorage.redirect;
@@ -84,4 +95,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
