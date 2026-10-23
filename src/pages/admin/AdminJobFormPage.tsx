@@ -10,8 +10,7 @@ import {
 } from '../../services/files';
 import { invalidateCache } from '../../services/cache';
 import { auth } from '../../services/firebase';
-import { WORKER_URL } from '../../services/jobsStore';
-import { fetchJobsList, saveJobToWorker } from '../../services/jobsStore';
+import { WORKER_URL, fetchJobsList, saveJobToWorker, R2_BASE } from '../../services/jobsStore';
 import { JobCircular, JobCategory, JobStatus, JobPostItem } from '../../types';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
@@ -227,6 +226,21 @@ export const AdminJobFormPage: React.FC = () => {
             }
           } catch (err) {
             console.warn('Archive load failed:', err);
+          }
+        }
+
+                // বিবরণ আলাদা ফাইলে থাকে (হালকা তালিকায় নেই)
+        if (data && !data.content) {
+          try {
+            const r = await fetch(
+              `${R2_BASE}/jobs/detail/${encodeURIComponent(data.slug || data.id)}.json?t=${Date.now()}`,
+              { cache: 'no-store' }
+            );
+            if (r.ok) {
+              data = { ...data, ...(await r.json()) };
+            }
+          } catch (err) {
+            console.warn('Detail load failed:', err);
           }
         }
 
