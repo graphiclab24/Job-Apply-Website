@@ -1,5 +1,10 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from 'firebase/auth';
 import {
   initializeFirestore,
   getFirestore,
@@ -91,7 +96,18 @@ try {
 }
 
 export const db = firestoreInstance;
-export const auth = getAuth(app);
+
+// Auth: popup resolver ইচ্ছাকৃতভাবে বাদ। এতে হোম পাতায় Google iframe/gapi লোড হয় না।
+// শুধু Google popup লগইনের সময় getPopupResolver() দিয়ে লেজি লোড হয়।
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+});
+
+/** Google popup লগইনের সময়ই শুধু এটি লোড হয় */
+export async function getPopupResolver() {
+  const mod = await import('firebase/auth');
+  return mod.browserPopupRedirectResolver;
+}
 
 export enum OperationType {
   CREATE = 'create',
