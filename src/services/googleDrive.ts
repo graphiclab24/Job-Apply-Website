@@ -131,7 +131,8 @@ export async function connectViaGoogleIdentityServices(): Promise<{ accessToken:
  */
 export async function connectGoogleDrive(): Promise<{ accessToken: string; user: any }> {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+        const { getPopupResolver } = await import('./firebase');
+    const result = await signInWithPopup(auth, googleProvider, await getPopupResolver());
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Google Drive এক্সেস টোকেন পাওয়া যায়নি');
