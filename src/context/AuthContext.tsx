@@ -304,7 +304,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearError();
     try {
       // Clean standard Google Auth Provider (ZERO Drive scopes = instant login, no developer verification warning)
-      const result = await signInWithPopup(auth, cleanUserGoogleProvider);
+      const { getPopupResolver } = await import('../services/firebase');
+      const result = await signInWithPopup(auth, cleanUserGoogleProvider, await getPopupResolver());
 
       if (isOwnerEmail(result.user.email)) {
         setRole('admin');
