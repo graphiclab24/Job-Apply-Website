@@ -29,7 +29,7 @@ import { DEFAULT_JOBS } from '../../data/defaultJobs';
 import DOMPurify from 'dompurify';
 import { useAuth } from '../../context/AuthContext';
 import { formatJobContent } from '../../utils/formatJobContent';
-import { fetchJobsList, fetchArchivedJob } from '../../services/jobsStore';
+import { fetchJobsList, fetchArchivedJob, R2_BASE } from '../../services/jobsStore';
 
 export const JobDetailsPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -60,7 +60,7 @@ export const JobDetailsPage: React.FC = () => {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [lightboxZoom, setLightboxZoom] = useState<number>(1);
 
-  // Superfast data fetching with Parallel Lookups + Stale-While-Revalidate
+  // তালিকা হালকা (বিবরণ ছাড়া); পূর্ণ বিবরণ আলাদা ফাইল থেকে
   useEffect(() => {
     if (!slug) return;
     const cacheKey = `job_detail_${slug}`;
@@ -73,7 +73,7 @@ export const JobDetailsPage: React.FC = () => {
       if (swr.data.featuredImage) {
         setCoverDataUrl(swr.data.featuredImage);
       }
-      // If data is fresh and has full content, no network fetch needed
+      // বিবরণসহ ও ক্যাশ তাজা হলে কোনো নেটওয়ার্ক অনুরোধ নয়
       if (!swr.isStale && swr.data.content && swr.data.content.length > 50) {
         return;
       }
@@ -89,13 +89,27 @@ export const JobDetailsPage: React.FC = () => {
           j.id === slug ||
           (j.slug && decodeURIComponent(j.slug) === decodedSlug);
 
-        // ১. চলমান তালিকা (R2 jobs.json)
+        // ১. চলমান তালিকা (হালকা)
         const list = await fetchJobsList();
         let resolved: any = list.find(matches) || DEFAULT_JOBS.find(matches);
 
-        // ২. না পেলে মেয়াদ শেষ সার্কুলার আর্কাইব থেকে (Google থেকে আসা পুরনো লিংক)
+        // ২. না পেলে মেয়াদ শেষ সার্কুলার আর্কাইব থেকে (পূর্ণ তথ্যসহ)
         if (!resolved) {
           resolved = await fetchArchivedJob(slug);
+        }
+
+        // ৩. চলমান সার্কুলারের বিবরণ আলাদা ফাইল থেকে (শুধু তখন, যখন তালিকায় বিবরণ নেই)
+        if (resolved && !resolved.archived && !(resolved.content && resolved.content.length > 0)) {
+          const detailSlug = resolved.slug || resolved.id;
+          try {
+            const res = await fetch(`${R2_BASE}/jobs/detail/${encodeURIComponent(detailSlug)}.json`);
+            if (res.ok) {
+              const detail = await res.json();
+              resolved = { ...resolved, ...detail };
+            }
+          } catch {
+            // বিবরণ না এলেও তালিকার তথ্য দেখাবে
+          }
         }
 
         if (resolved && !isCancelled) {
