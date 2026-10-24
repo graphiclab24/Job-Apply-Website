@@ -1,25 +1,13 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import {
-  User,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signInWithCustomToken,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-} from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../services/firebase';
-import { setDriveAccessToken } from '../services/googleDrive';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { User } from 'firebase/auth';
 import { WORKER_URL } from '../services/jobsStore';
 import { mobileToEmail, emailToMobile, isValidMobile, isValidPassword } from '../utils/auth';
 import { UserRole } from '../types';
 
-// Standard Google Auth Provider for regular user sign-in:
-// Pure authentication ONLY (email, profile). ZERO Google Drive scopes to eliminate "Contact developer" / "App unverified" blocks!
-const cleanUserGoogleProvider = new GoogleAuthProvider();
-cleanUserGoogleProvider.setCustomParameters({ prompt: 'select_account' });
+// Firebase কোনো কিছুই হোম পাতায় আগে লোড করে না। প্রয়োজনে (লগইন/সেশন থাকলে) লেজি লোড হয়।
+const loadFirebase = () => import('../services/firebase');
+const loadAuthLib = () => import('firebase/auth');
+const loadFirestoreLib = () => import('firebase/firestore');
 
 interface AuthContextType {
   user: User | null;
@@ -39,7 +27,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 /**
  * অ্যাডমিন ইমেইল তালিকা। Firestore rules-এও একই তালিকা আছে।
- * নতুন অ্যাডমিন যোগ করলে এখানে এবং firestore.rules-এ দুই জায়গাতেই যোগ করতে হবে।
  */
 const ADMIN_EMAILS = ['habiblinkage@gmail.com', 'masterboom2040@gmail.com'];
 
@@ -89,29 +76,29 @@ const persistMobile = (m: string | null) => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => auth.currentUser);
+  const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(() => getStoredRole());
   const [mobile, setMobile] = useState<string | null>(() => getStoredMobile());
-  // IMPORTANT: loading must be TRUE until onAuthStateChanged resolves from Firebase SDK
-  const [loading, setLoading] = useState<boolean>(true);
+  // আগে সেশনের চিহ্ন থাকলেই কেবল লোডিং; অতিথির জন্য তাৎক্ষণিক
+  const [loading, setLoading] = useState<boolean>(() => Boolean(getStoredRole()));
   const [error, setError] = useState<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
 
   const clearError = () => setError(null);
 
-  // পেজ খোলার সময় কোনো Firestore read নেই।
-  // অ্যাডমিন = ইমেইল তালিকা; বাকিরা = ইউজার, মোবাইল ইমেইল থেকে বের হয়।
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+  // Firebase auth-এর পরিবর্তন শোনা (একবার শুরু হলে আর লোড হয় না)
+  const startListener = async () => {
+    if (unsubRef.current) return;
+    const [{ auth }, { onAuthStateChanged }] = await Promise.all([loadFirebase(), loadAuthLib()]);
+    unsubRef.current = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-
         if (isOwnerEmail(currentUser.email)) {
           setRole('admin');
           setMobile(null);
           persistRole('admin');
           persistMobile(null);
         } else {
-          // আগে লগইনের সময় যিনি অ্যাডমিন হিসেবে যাচাই হয়েছিলেন, তার role বজায় থাকে
           const wasAdmin = getStoredRole() === 'admin';
           const userMobile = emailToMobile(currentUser.email || '') || null;
           setRole(wasAdmin ? 'admin' : 'user');
@@ -128,14 +115,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setLoading(false);
     });
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    if (getStoredRole()) {
+      startListener().catch(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+    return () => {
+      unsubRef.current?.();
+      unsubRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
-   * মাস্টার লগইন: মোবাইল নম্বর + মাস্টার পাসওয়ার্ড দিলে Worker ওই ব্যবহারকারীর
-   * কাস্টম টোকেন দেয়। সেটি দিয়ে সেই ব্যবহারকারী হিসেবে সাইন-ইন হয়।
-   * মাস্টার পাসওয়ার্ড শুধু Worker-এর Secret-এ থাকে, এখানে কোনো গোপন মান নেই।
+   * মাস্টার লগইন: মোবাইল + মাস্টার পাসওয়ার্ড দিলে Worker কাস্টম টোকেন দেয়।
    */
   const tryMasterLogin = async (mobileNumber: string, masterPassword: string): Promise<boolean> => {
     try {
@@ -147,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!res.ok) return false;
       const data = await res.json();
       if (!data?.ok || !data?.customToken) return false;
+      const [{ auth }, { signInWithCustomToken }] = await Promise.all([loadFirebase(), loadAuthLib()]);
       await signInWithCustomToken(auth, data.customToken);
       return true;
     } catch {
@@ -176,17 +173,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      const [{ auth }, { signInWithEmailAndPassword }] = await Promise.all([loadFirebase(), loadAuthLib()]);
       await signInWithEmailAndPassword(auth, email, pass);
+      await startListener();
     } catch (err: any) {
       const wrongCredential =
         err.code === 'auth/invalid-credential' ||
         err.code === 'auth/wrong-password' ||
         err.code === 'auth/user-not-found';
 
-      // মোবাইল লগইন ব্যর্থ হলে মাস্টার পাসওয়ার্ড হিসেবে চেষ্টা (ইমেইল লগইনে নয়)
       if (wrongCredential && !isEmailLogin) {
         const ok = await tryMasterLogin(cleanId, pass);
-        if (ok) return;
+        if (ok) {
+          await startListener();
+          return;
+        }
       }
 
       if (wrongCredential) {
@@ -219,18 +220,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      const userRef = doc(db, 'users', cred.user.uid);
+      const [{ auth, db, handleFirestoreError, OperationType }, authLib, fsLib] = await Promise.all([
+        loadFirebase(),
+        loadAuthLib(),
+        loadFirestoreLib(),
+      ]);
+      const cred = await authLib.createUserWithEmailAndPassword(auth, email, pass);
       try {
-        await setDoc(userRef, {
+        await fsLib.setDoc(fsLib.doc(db, 'users', cred.user.uid), {
           mobile: userMobile,
           email: email,
           role: 'user',
-          createdAt: serverTimestamp(),
+          createdAt: fsLib.serverTimestamp(),
         });
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `users/${cred.user.uid}`);
       }
+      await startListener();
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         throw new Error('এই মোবাইল নম্বর বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।');
@@ -249,17 +255,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const isOwner = isOwnerEmail(cleanEmail);
 
     try {
+      const [{ auth, db }, authLib, fsLib] = await Promise.all([loadFirebase(), loadAuthLib(), loadFirestoreLib()]);
       let cred;
       try {
-        cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+        cred = await authLib.signInWithEmailAndPassword(auth, cleanEmail, pass);
       } catch (signInErr: any) {
-        // তালিকার অ্যাডমিনের প্রথম লগইনে অ্যাকাউন্ট না থাকলে তৈরি করা হবে
         if (
           isOwner &&
           (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential')
         ) {
           try {
-            cred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+            cred = await authLib.createUserWithEmailAndPassword(auth, cleanEmail, pass);
           } catch (createErr: any) {
             if (createErr.code === 'auth/email-already-in-use') {
               throw new Error('পাসওয়ার্ড সঠিক নয়। অনুগ্রহ করে সঠিক পাসওয়ার্ড দিন।');
@@ -272,23 +278,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (isOwner) {
-        // তালিকার অ্যাডমিন: কোনো Firestore read নয়
         setRole('admin');
         persistRole('admin');
         persistMobile(null);
+        await startListener();
         return;
       }
 
-      // তালিকার বাইরের ইমেইল: শুধু লগইনের সময় admins collection যাচাই (একবার)
-      const adminDoc = await getDoc(doc(db, 'admins', cred.user.uid));
+      // তালিকার বাইরের ইমেইল: শুধু লগইনের সময় admins collection যাচাই
+      const adminDoc = await fsLib.getDoc(fsLib.doc(db, 'admins', cred.user.uid));
       if (!adminDoc.exists()) {
-        await signOut(auth);
+        await authLib.signOut(auth);
         throw new Error('আপনি অ্যাডমিন নন। প্রবেশাধিকার সংরক্ষিত।');
       }
 
       setRole('admin');
       persistRole('admin');
       persistMobile(null);
+      await startListener();
     } catch (err: any) {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
         throw new Error('ইমেইল বা পাসওয়ার্ড সঠিক নয়');
@@ -303,9 +310,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     clearError();
     try {
-      // Clean standard Google Auth Provider (ZERO Drive scopes = instant login, no developer verification warning)
-      const { getPopupResolver } = await import('../services/firebase');
-      const result = await signInWithPopup(auth, cleanUserGoogleProvider, await getPopupResolver());
+      const [{ auth, db, getPopupResolver }, authLib, fsLib] = await Promise.all([
+        loadFirebase(),
+        loadAuthLib(),
+        loadFirestoreLib(),
+      ]);
+
+      const provider = new authLib.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      // popup resolver শুধু এই মুহূর্তে লোড হয়
+      const result = await authLib.signInWithPopup(auth, provider, await getPopupResolver());
+      await startListener();
 
       if (isOwnerEmail(result.user.email)) {
         setRole('admin');
@@ -313,18 +328,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // তালিকার বাইরের অ্যাডমিন হলে (লগইনের সময় একবার যাচাই)
-      const adminDoc = await getDoc(doc(db, 'admins', result.user.uid));
+      const adminDoc = await fsLib.getDoc(fsLib.doc(db, 'admins', result.user.uid));
       if (adminDoc.exists()) {
         setRole('admin');
         persistRole('admin');
         return;
       }
 
-      // সাধারণ ইউজার: প্রোফাইল একবার লিখে দেওয়া (merge, পড়া ছাড়া)
       try {
-        await setDoc(
-          doc(db, 'users', result.user.uid),
+        await fsLib.setDoc(
+          fsLib.doc(db, 'users', result.user.uid),
           {
             email: result.user.email || '',
             displayName: result.user.displayName || '',
@@ -348,7 +361,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     clearError();
-    await signOut(auth);
+    try {
+      const [{ auth }, { signOut }] = await Promise.all([loadFirebase(), loadAuthLib()]);
+      await signOut(auth);
+    } catch (e) {
+      console.warn('Sign out warning:', e);
+    }
     setUser(null);
     setRole(null);
     setMobile(null);
