@@ -10,15 +10,19 @@ import { ScrollToTop } from './components/common/ScrollToTop';
 
 // Layouts
 import { PublicLayout } from './layouts/PublicLayout';
-import { UserLayout } from './layouts/UserLayout';
-import { AdminLayout } from './layouts/AdminLayout';
+
+
 
 // Core Public Pages (Eagerly loaded for bulletproof instant mobile landing & 0ms navigation)
 import { HomePage } from './pages/public/HomePage';
 import { JobsPage } from './pages/public/JobsPage';
 import { JobDetailsPage } from './pages/public/JobDetailsPage';
 import { LoginPage } from './pages/public/LoginPage';
-import { RegisterPage } from './pages/public/RegisterPage';
+
+// Layouts ও রেজিস্ট্রেশন লেজি: Firebase-সংশ্লিষ্ট অংশ হোম পাতায় আগে লোড হবে না
+const UserLayout = lazy(() => import('./layouts/UserLayout').then((m) => ({ default: m.UserLayout })));
+const AdminLayout = lazy(() => import('./layouts/AdminLayout').then((m) => ({ default: m.AdminLayout })));
+const RegisterPage = lazy(() => import('./pages/public/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 
 // Lazy Loaded Auxiliary Public Pages
 const NotFoundPage = lazy(() => import('./pages/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
