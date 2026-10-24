@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { getFile, getFileId } from '../../services/files';
+// files সার্ভিস (Firebase সংশ্লিষ্ট) শুধু প্রয়োজনে লেজি লোড হয়
+const loadFiles = () => import('../../services/files');
 import { getCached, setCached, getCachedWithSWR, precacheJob, findJobInAnyCache } from '../../services/cache';
 import { JobCircular } from '../../types';
 import { Spinner } from '../../components/common/Spinner';
@@ -145,7 +146,8 @@ export const JobDetailsPage: React.FC = () => {
     }
 
     if (job.hasCover && !coverDataUrl) {
-      getFile(getFileId.cover(job.id))
+      loadFiles()
+        .then(({ getFile, getFileId }) => getFile(getFileId.cover(job.id)))
         .then((fileDoc) => {
           if (fileDoc?.data) {
             setCoverDataUrl(fileDoc.data);
